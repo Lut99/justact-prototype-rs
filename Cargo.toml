@@ -1,0 +1,38 @@
+[package]
+name = "justact-prototype"
+version = "0.1.0"
+edition = "2021"
+authors = ["Tim Müller"]
+repository = "https://github.com/Lut99/justact-prototype-rs"
+description = "Provides an implementation of a simple demo environment that simulates agents without threads or any of that fancy jazz."
+
+
+[[example]]
+name = "paper1"
+path = "examples/paper1.rs"
+required-features = ["datalog"]
+
+
+[dependencies]
+bit-vec = "0.8.0"
+console = "0.15.8"
+error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
+log = "0.4.22"
+thiserror = "2.0.3"
+
+datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["interpreter", "parser", "reserialize"], optional = true }
+justact = { git = "https://github.com/Lut99/justact-rs" }
+stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
+
+
+[dev-dependencies]
+clap = { version = "4.5.21", features = ["derive"] }
+datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["macros"] }
+humanlog = { git = "https://github.com/Lut99/humanlog-rs" }
+
+
+[features]
+default = []
+
+all-lang = ["datalog"]
+datalog = ["dep:datalog"]
