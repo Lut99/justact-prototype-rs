@@ -4,7 +4,7 @@
 //  Created:
 //    26 Nov 2024, 11:53:46
 //  Last edited:
-//    26 Nov 2024, 11:54:00
+//    19 Dec 2024, 12:14:43
 //  Auto updated?
 //    Yes
 //
@@ -16,3 +16,5 @@
 // Declare the modules
 #[cfg(feature = "datalog")]
 pub mod datalog;
+#[cfg(feature = "slick")]
+pub mod slick;

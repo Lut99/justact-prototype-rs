@@ -4,15 +4,12 @@
 //  Created:
 //    26 Nov 2024, 11:54:14
 //  Last edited:
-//    19 Dec 2024, 12:08:18
+//    19 Dec 2024, 12:17:24
 //  Auto updated?
 //    Yes
 //
 //  Description:
 //!   Implements JustAct traits for the [`datalog`]-crate.
-//!   
-//!   # Semantics
-//!   - Effects are `effect(AFFECTOR, EFFECT)`.
 //
 
 use std::collections::HashMap;
@@ -217,6 +214,7 @@ impl justact::Extractor<str, str, str> for Extractor {
 
     #[inline]
     fn extract<'m, M: 'm + justact::Message<Id = str, AuthorId = str, Payload = str>>(
+        &self,
         msgs: &'m impl justact::Set<M>,
     ) -> Result<Self::Policy<'m>, Self::Error<'m>> {
         // Attempt to iterate over the messages
@@ -343,7 +341,7 @@ mod tests {
     #[test]
     fn test_extract_policy_single() {
         let msg = Message { id: "A".into(), author_id: "Amy".into(), payload: "foo. bar :- baz(A).".into() };
-        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&msg).unwrap();
+        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msg).unwrap();
         assert_eq!(pol.0, datalog!( foo. bar :- baz(A). ));
     }
     #[test]
@@ -354,7 +352,7 @@ mod tests {
         let msgs = justact::MessageSet::from([msg1, msg2]);
 
         // Extract the policy from it
-        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&msgs).unwrap();
+        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msgs).unwrap();
         // NOTE: MessageSet collects messages unordered, so the rules may be in any order
         assert!(pol.0 == datalog!( foo. bar :- baz(A). ) || pol.0 == datalog!( bar :- baz(A). foo. ));
     }

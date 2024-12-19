@@ -16,6 +16,7 @@ thiserror = "2.0.8"
 
 datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["interpreter", "parser", "reserialize"], optional = true }
 justact = { git = "https://github.com/Lut99/justact-rs", branch = "journal" }
+slick = { git = "https://github.com/sirkibsirkib/slick", optional = true }
 stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
 
 
@@ -28,7 +29,8 @@ stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
 [features]
 default = []
 
-all-lang = ["datalog"]
+all-lang = ["datalog", "slick"]
 datalog = ["dep:datalog"]
+slick = ["dep:slick"]
 
 lang-macros = ["datalog/macros"]
