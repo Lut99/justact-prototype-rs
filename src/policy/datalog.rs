@@ -4,7 +4,7 @@
 //  Created:
 //    26 Nov 2024, 11:54:14
 //  Last edited:
-//    20 Dec 2024, 16:32:24
+//    20 Dec 2024, 16:47:42
 //  Auto updated?
 //    Yes
 //
@@ -45,32 +45,6 @@ pub enum SyntaxError<'m> {
 
 
 /***** LIBRARY *****/
-/// Wraps a Datalog fact of a VERY particular shape as an [`Effect`](justact::Effect).
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Effect<'f, 's> {
-    /// The truth wrapped by this effect.
-    truth:    Truth<'f, 's>,
-    /// The identifier of the affector.
-    affector: Ident<&'f str, &'s str>,
-}
-impl<'f, 's> justact::Affectored for Effect<'f, 's> {
-    type AffectorId = Ident<&'f str, &'s str>;
-
-    #[inline]
-    fn affector_id(&self) -> &Self::AffectorId { &self.affector }
-}
-impl<'f, 's> justact::Effect for Effect<'f, 's> {}
-impl<'f, 's> justact::Identifiable for Effect<'f, 's> {
-    type Id = Atom<&'f str, &'s str>;
-
-    #[inline]
-    fn id(&self) -> &Self::Id { &self.truth.fact }
-}
-impl<'f, 's> justact::Truth for Effect<'f, 's> {
-    #[inline]
-    fn value(&self) -> Option<bool> { self.truth.value }
-}
-
 /// Wraps a Datalog (fact, truth) pair as a [`Truth`](justact::Truth).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Truth<'f, 's> {
@@ -88,6 +62,32 @@ impl<'f, 's> justact::Identifiable for Truth<'f, 's> {
 impl<'f, 's> justact::Truth for Truth<'f, 's> {
     #[inline]
     fn value(&self) -> Option<bool> { self.value }
+}
+
+/// Wraps a Datalog fact of a VERY particular shape as an [`Effect`](justact::Effect).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Effect<'f, 's> {
+    /// The truth wrapped by this effect.
+    pub truth:    Truth<'f, 's>,
+    /// The identifier of the affector.
+    pub affector: Ident<&'f str, &'s str>,
+}
+impl<'f, 's> justact::Affectored for Effect<'f, 's> {
+    type AffectorId = Ident<&'f str, &'s str>;
+
+    #[inline]
+    fn affector_id(&self) -> &Self::AffectorId { &self.affector }
+}
+impl<'f, 's> justact::Effect for Effect<'f, 's> {}
+impl<'f, 's> justact::Identifiable for Effect<'f, 's> {
+    type Id = Atom<&'f str, &'s str>;
+
+    #[inline]
+    fn id(&self) -> &Self::Id { &self.truth.fact }
+}
+impl<'f, 's> justact::Truth for Effect<'f, 's> {
+    #[inline]
+    fn value(&self) -> Option<bool> { self.truth.value }
 }
 
 /// Wraps an [`Interpretation`] in order to implement [`Denotation`](justact::Denotation).
@@ -165,11 +165,6 @@ impl<'f, 's> Denotation<'f, 's> {
 impl<'f, 's> justact::Denotation for Denotation<'f, 's> {
     type Effect = Effect<'f, 's>;
     type Truth = Truth<'f, 's>;
-
-    #[inline]
-    fn truth_of(&self, fact: &<Self::Truth as justact::Identifiable>::Id) -> Option<bool> {
-        if let Some(value) = self.truths.get(fact) { value.value } else { Some(false) }
-    }
 }
 impl<'f, 's> justact::Set<Effect<'f, 's>> for Denotation<'f, 's> {
     type Error = Infallible;
