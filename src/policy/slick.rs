@@ -4,7 +4,7 @@
 //  Created:
 //    19 Dec 2024, 12:09:23
 //  Last edited:
-//    20 Dec 2024, 17:20:57
+//    06 Jan 2025, 15:30:15
 //  Auto updated?
 //    Yes
 //
@@ -22,6 +22,8 @@ mod justact {
     pub use ::justact::policies::{Denotation, Effect, Truth};
     pub use ::justact::sets::Set;
 }
+#[cfg(feature = "log")]
+use log::trace;
 
 
 /***** HELPERS *****/
@@ -38,6 +40,7 @@ pub enum AffectorAtom {
 
 /***** LIBRARY *****/
 /// Wraps a Slick (fact, truth) pair as a [`Truth`](justact::Truth).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Truth {
     /// The atom we're wrapping.
     pub fact:  GroundAtom,
@@ -60,6 +63,7 @@ impl justact::Truth for Truth {
 }
 
 /// Wraps a Slick (truth, affector) pair as an [`Effect`](justact::Effect).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Effect {
     /// The truth wrapped.
     pub truth:    Truth,
@@ -85,6 +89,7 @@ impl justact::Truth for Effect {
 }
 
 /// Wraps a Slick denotation as a [`Denotation`](justact::Denotation).
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Denotation {
     /// The set of truths computed from the slick denotation.
     truths:  HashMap<GroundAtom, Truth>,
@@ -115,98 +120,92 @@ impl Denotation {
         let mut effects: HashMap<GroundAtom, Effect> = HashMap::new();
         for (fact, value) in int.trues.into_iter().map(|v| (v, Some(true))).chain(int.unknowns.into_iter().map(|v| (v, None))) {
             // See if the fact matches the effect pattern
-            fn collect_effect(fact: &GroundAtom, value: Option<bool>, pat: &Atom, affector: &AffectorAtom) -> Option<Effect> {
+            fn match_effect(fact: &GroundAtom, value: Option<bool>, pat: &Atom) -> bool {
+                #[cfg(feature = "log")]
+                trace!("Finding effect pattern '{pat:?}' in '{fact:?}'");
                 match (fact, pat) {
                     // If there's constants involved in the pattern, match that
                     (GroundAtom::Constant(l), Atom::Constant(r)) => {
-                        if l == r {
-                            let affector: GroundAtom = match affector {
-                                AffectorAtom::Constant(c) => GroundAtom::Constant(*c),
-                                AffectorAtom::Variable(v) => panic!("Did not find affector variable {v:?} in matched atom {l:?}"),
-                            };
-                            Some(Effect { truth: Truth { fact: fact.clone(), value }, affector })
-                        } else {
-                            None
-                        }
+                        trace!("--> fact '{l:?}' is a constant; pattern '{r:?}' is a constant");
+                        l == r
                     },
                     (GroundAtom::Tuple(l), Atom::Tuple(r)) => {
+                        trace!("--> fact '{l:?}' is a tuple; pattern '{r:?}' is a tuple");
                         if l.len() == r.len() {
                             // If the arity matches, then check if all the patterns match
                             for (l, r) in l.iter().zip(r.iter()) {
-                                if collect_effect(l, value, r, affector).is_none() {
-                                    return None;
+                                trace!("RECURSINGGGG");
+                                if !match_effect(l, value, r) {
+                                    return false;
                                 }
                             }
-
-                            // It does! Now try to find the affector
-                            let affector: GroundAtom = match affector {
-                                AffectorAtom::Constant(c) => GroundAtom::Constant(*c),
-                                AffectorAtom::Variable(v) => {
-                                    fn get_var_contents(fact: &[GroundAtom], pat: &[Atom], var: Text) -> Option<GroundAtom> {
-                                        for (i, arg) in pat.into_iter().enumerate() {
-                                            match arg {
-                                                Atom::Constant(_) => continue,
-                                                Atom::Variable(v) => {
-                                                    if *v == var {
-                                                        return Some(fact[i].clone());
-                                                    }
-                                                },
-                                                Atom::Wildcard => continue,
-                                                Atom::Tuple(pat) => {
-                                                    if let GroundAtom::Tuple(fact) = &fact[i] {
-                                                        if fact.len() == pat.len() {
-                                                            if let Some(res) = get_var_contents(fact, pat, var) {
-                                                                return Some(res);
-                                                            }
-                                                        }
-                                                    }
-                                                },
-                                            }
-                                        }
-                                        None
-                                    }
-                                    match get_var_contents(l, r, *v) {
-                                        Some(val) => val,
-                                        None => panic!("Did not find affector variable {v:?} in matched atom {l:?}"),
-                                    }
-                                },
-                            };
-
-                            // Return the effect
-                            Some(Effect { truth: Truth { fact: fact.clone(), value }, affector })
+                            true
                         } else {
-                            None
+                            false
                         }
                     },
 
                     // If the pattern IS a variable, ez
                     (fact, Atom::Variable(var)) => {
-                        let affector: GroundAtom = match affector {
-                            AffectorAtom::Constant(c) => GroundAtom::Constant(*c),
-                            AffectorAtom::Variable(v) => {
-                                if var == v {
-                                    fact.clone()
-                                } else {
-                                    panic!("Did not find affector variable {v:?} in matched atom {fact:?}")
-                                }
-                            },
-                        };
-                        Some(Effect { truth: Truth { fact: fact.clone(), value }, affector })
+                        trace!("--> fact '{fact:?}' is *something*; pattern '{var:?}' is a variable");
+                        true
                     },
                     (fact, Atom::Wildcard) => {
-                        let affector: GroundAtom = match affector {
-                            AffectorAtom::Constant(c) => GroundAtom::Constant(*c),
-                            AffectorAtom::Variable(v) => panic!("Did not find affector variable {v:?} in matched atom \"_\""),
-                        };
-                        Some(Effect { truth: Truth { fact: fact.clone(), value }, affector })
+                        trace!("--> fact '{fact:?}' is *something*; pattern '{pat:?}' is a wildcard");
+                        true
                     },
 
                     // Otherwise, don't add
-                    _ => None,
+                    _ => {
+                        trace!("--> fact '{fact:?}' is not a constant or tuple while the pattern is; and pattern '{pat:?}' is not a variable",);
+                        false
+                    },
                 }
             }
-            if let Some(effect) = collect_effect(&fact, value, &pat, &affector) {
-                effects.insert(effect.truth.fact.clone(), effect);
+            if match_effect(&fact, value, &pat) {
+                // See if we have a constant affector or can match
+                match affector {
+                    AffectorAtom::Constant(c) => {
+                        effects.insert(fact.clone(), Effect {
+                            truth:    Truth { fact: fact.clone(), value: Some(true) },
+                            affector: GroundAtom::Constant(c),
+                        });
+                    },
+                    AffectorAtom::Variable(v) => {
+                        fn get_var_contents<'f>(fact: &'f GroundAtom, pat: &Atom, affector_var: &Text) -> Option<&'f GroundAtom> {
+                            match pat {
+                                Atom::Constant(_) => None,
+                                Atom::Tuple(pat) => {
+                                    for (fact, pat) in if let GroundAtom::Tuple(fact) = fact { fact.iter() } else { unreachable!() }.zip(pat.iter()) {
+                                        if let Some(res) = get_var_contents(fact, pat, affector_var) {
+                                            return Some(res);
+                                        } else {
+                                            continue;
+                                        }
+                                    }
+                                    None
+                                },
+                                Atom::Variable(pat) => {
+                                    if pat == affector_var {
+                                        Some(fact)
+                                    } else {
+                                        None
+                                    }
+                                },
+                                Atom::Wildcard => Some(fact),
+                            }
+                        }
+                        match get_var_contents(&fact, &pat, &v) {
+                            Some(affector) => {
+                                effects.insert(fact.clone(), Effect {
+                                    truth:    Truth { fact: fact.clone(), value: Some(true) },
+                                    affector: affector.clone(),
+                                });
+                            },
+                            None => panic!("Did not find affector variable {v:?} in matched atom {fact:?}"),
+                        }
+                    },
+                }
             }
 
             // Always add the truth as such
@@ -248,4 +247,136 @@ impl justact::Set<Truth> for Denotation {
 impl justact::Denotation for Denotation {
     type Effect = Effect;
     type Truth = Truth;
+}
+
+
+
+
+
+/***** TESTS *****/
+#[cfg(test)]
+mod tests {
+    use humanlog::{DebugMode, HumanLogger};
+    use slick::infer::Config;
+    use slick::parse;
+
+    use super::*;
+
+
+    /// Generates the effect pattern.
+    #[inline]
+    fn make_pattern() -> Atom {
+        Atom::Tuple(vec![
+            Atom::Constant(Text::from_str("effect")),
+            Atom::Variable(Text::from_str("Effect")),
+            Atom::Constant(Text::from_str("by")),
+            Atom::Variable(Text::from_str("Affector")),
+        ])
+    }
+
+    /// Generates a ground atom.
+    #[inline]
+    #[track_caller]
+    fn make_flat_ground_atom_str(s: &str) -> GroundAtom { parse::ground_atom(s).unwrap().1 }
+
+
+    /// Tests whether the extraction of effects works as expected when there's nothing to extract.
+    #[test]
+    fn test_denotation_effects_none() {
+        #[cfg(feature = "log")]
+        if std::env::var("LOGGER").ok() == Some("1".into()) {
+            if let Err(err) = HumanLogger::terminal(DebugMode::Full).init() {
+                eprintln!("WARNING: Failed to setup logger: {err}");
+            }
+        }
+
+        // Empty pattern, effect program
+        let program = parse::program("effect read by amy.").unwrap();
+        let int = program.1.denotation(&Config::default()).unwrap();
+        let den = Denotation::from_interpretation(int, Atom::Tuple(vec![]), AffectorAtom::Constant(Text::from_str("affector")));
+        assert!(den.effects.is_empty());
+
+        // Non-empty pattern, empty program
+        let program = parse::program("").unwrap();
+        let int = program.1.denotation(&Config::default()).unwrap();
+        let den = Denotation::from_interpretation(int, make_pattern(), AffectorAtom::Variable(Text::from_str("Affector")));
+        assert!(den.effects.is_empty());
+
+        // Non-empty pattern, non-empty & non-effect program
+        let program = parse::program("amy. amy reads an effect. effect write of amy.").unwrap();
+        let int = program.1.denotation(&Config::default()).unwrap();
+        let den = Denotation::from_interpretation(int, make_pattern(), AffectorAtom::Variable(Text::from_str("Affector")));
+        assert!(den.effects.is_empty());
+    }
+
+    /// Tests whether the extraction of effects works as expected when there are effects to extract.
+    #[test]
+    fn test_denotation_effects_some() {
+        #[cfg(feature = "log")]
+        if std::env::var("LOGGER").ok() == Some("1".into()) {
+            if let Err(err) = HumanLogger::terminal(DebugMode::Full).init() {
+                eprintln!("WARNING: Failed to setup logger: {err}");
+            }
+        }
+
+        // Match a single effect
+        let program = parse::program("effect read by amy.").unwrap();
+        let int = program.1.denotation(&Config::default()).unwrap();
+        let den = Denotation::from_interpretation(int, make_pattern(), AffectorAtom::Variable(Text::from_str("Affector")));
+        assert_eq!(
+            den.effects,
+            HashMap::from([(make_flat_ground_atom_str("effect read by amy"), Effect {
+                truth:    Truth { fact: make_flat_ground_atom_str("effect read by amy"), value: Some(true) },
+                affector: make_flat_ground_atom_str("amy"),
+            })])
+        );
+
+        // Match a single effect, but with noise
+        let program = parse::program("effect write b bob. effect read by amy. foo bar baz.").unwrap();
+        let int = program.1.denotation(&Config::default()).unwrap();
+        let den = Denotation::from_interpretation(int, make_pattern(), AffectorAtom::Variable(Text::from_str("Affector")));
+        assert_eq!(
+            den.effects,
+            HashMap::from([(make_flat_ground_atom_str("effect read by amy"), Effect {
+                truth:    Truth { fact: make_flat_ground_atom_str("effect read by amy"), value: Some(true) },
+                affector: make_flat_ground_atom_str("amy"),
+            })])
+        );
+
+        // Match a multiple effects
+        let program = parse::program("effect read by amy. effect write by bob.").unwrap();
+        let int = program.1.denotation(&Config::default()).unwrap();
+        let den = Denotation::from_interpretation(int, make_pattern(), AffectorAtom::Variable(Text::from_str("Affector")));
+        assert_eq!(
+            den.effects,
+            HashMap::from([
+                (make_flat_ground_atom_str("effect read by amy"), Effect {
+                    truth:    Truth { fact: make_flat_ground_atom_str("effect read by amy"), value: Some(true) },
+                    affector: make_flat_ground_atom_str("amy"),
+                }),
+                (make_flat_ground_atom_str("effect write by bob"), Effect {
+                    truth:    Truth { fact: make_flat_ground_atom_str("effect write by bob"), value: Some(true) },
+                    affector: make_flat_ground_atom_str("bob"),
+                })
+            ])
+        );
+
+        // Match a multiple effects, but with noise
+        let program = parse::program("effect read by amy. effect read by. effect write by bob. foo. effect.").unwrap();
+        let int = program.1.denotation(&Config::default()).unwrap();
+        let den = Denotation::from_interpretation(int, make_pattern(), AffectorAtom::Variable(Text::from_str("Affector")));
+        assert_eq!(
+            den.effects,
+            HashMap::from([
+                (make_flat_ground_atom_str("effect read by amy"), Effect {
+                    truth:    Truth { fact: make_flat_ground_atom_str("effect read by amy"), value: Some(true) },
+                    affector: make_flat_ground_atom_str("amy"),
+                }),
+                (make_flat_ground_atom_str("effect write by bob"), Effect {
+                    truth:    Truth { fact: make_flat_ground_atom_str("effect write by bob"), value: Some(true) },
+                    affector: make_flat_ground_atom_str("bob"),
+                })
+            ])
+        );
+    }
 }
