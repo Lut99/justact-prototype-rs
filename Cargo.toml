@@ -12,6 +12,7 @@ description = "Provides an implementation of a simple demo environment that simu
 # console = "0.15.8"
 error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
 log = { version = "0.4.22", optional = true }
+nom = { version = "7.1.3", optional = true }
 thiserror = "2.0.9"
 
 datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["interpreter", "parser", "reserialize"], optional = true }
@@ -32,7 +33,7 @@ default = []
 
 all-lang = ["datalog", "slick"]
 datalog = ["dep:datalog"]
-slick = ["dep:slick"]
+slick = ["dep:nom", "dep:slick"]
 
 lang-macros = ["datalog/macros"]
 
