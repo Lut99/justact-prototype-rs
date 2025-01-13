@@ -4,7 +4,7 @@
 //  Created:
 //    26 Nov 2024, 11:54:14
 //  Last edited:
-//    13 Jan 2025, 15:04:20
+//    13 Jan 2025, 17:18:16
 //  Auto updated?
 //    Yes
 //
@@ -24,7 +24,8 @@ use error_trace::trace;
 use thiserror::Error;
 mod justact {
     pub use ::justact::auxillary::{Affectored, Identifiable};
-    pub use ::justact::collections::{Map, Set};
+    pub use ::justact::collections::map::Map;
+    pub use ::justact::collections::set::Set;
     pub use ::justact::messages::Message;
     pub use ::justact::policies::{Denotation, Effect, Extractor, Policy};
 }

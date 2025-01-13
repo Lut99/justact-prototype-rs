@@ -4,7 +4,7 @@
 //  Created:
 //    19 Dec 2024, 12:09:23
 //  Last edited:
-//    13 Jan 2025, 15:01:09
+//    13 Jan 2025, 17:18:27
 //  Auto updated?
 //    Yes
 //
@@ -22,7 +22,8 @@ use slick::text::Text;
 use slick::{Atom, GroundAtom, Program, Rule, RuleBody, parse};
 mod justact {
     pub use ::justact::auxillary::{Affectored, Identifiable};
-    pub use ::justact::collections::{InfallibleSet, Map, Set};
+    pub use ::justact::collections::map::Map;
+    pub use ::justact::collections::set::{InfallibleSet, Set};
     pub use ::justact::messages::Message;
     pub use ::justact::policies::{Denotation, Effect, Extractor, Policy};
 }

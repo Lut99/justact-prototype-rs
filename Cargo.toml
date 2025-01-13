@@ -13,6 +13,7 @@ description = "Provides an implementation of a simple demo environment that simu
 error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
 log = { version = "0.4.22", optional = true }
 nom = { version = "7.1.3", optional = true }
+rand = "0.8.5"
 thiserror = "2.0.9"
 
 datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["interpreter", "parser", "reserialize"], optional = true }
