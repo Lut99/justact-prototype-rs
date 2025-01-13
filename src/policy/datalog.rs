@@ -4,7 +4,7 @@
 //  Created:
 //    26 Nov 2024, 11:54:14
 //  Last edited:
-//    20 Dec 2024, 16:47:42
+//    13 Jan 2025, 15:04:20
 //  Auto updated?
 //    Yes
 //
@@ -24,9 +24,9 @@ use error_trace::trace;
 use thiserror::Error;
 mod justact {
     pub use ::justact::auxillary::{Affectored, Identifiable};
+    pub use ::justact::collections::{Map, Set};
     pub use ::justact::messages::Message;
-    pub use ::justact::policies::{Denotation, Effect, Extractor, Policy, Truth};
-    pub use ::justact::sets::Set;
+    pub use ::justact::policies::{Denotation, Effect, Extractor, Policy};
 }
 
 
@@ -45,30 +45,11 @@ pub enum SyntaxError<'m> {
 
 
 /***** LIBRARY *****/
-/// Wraps a Datalog (fact, truth) pair as a [`Truth`](justact::Truth).
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Truth<'f, 's> {
-    /// Defines the fact who's truth we are describing.
-    pub fact:  Atom<&'f str, &'s str>,
-    /// The truth value of the fact we're describing.
-    pub value: Option<bool>,
-}
-impl<'f, 's> justact::Identifiable for Truth<'f, 's> {
-    type Id = Atom<&'f str, &'s str>;
-
-    #[inline]
-    fn id(&self) -> &Self::Id { &self.fact }
-}
-impl<'f, 's> justact::Truth for Truth<'f, 's> {
-    #[inline]
-    fn value(&self) -> Option<bool> { self.value }
-}
-
 /// Wraps a Datalog fact of a VERY particular shape as an [`Effect`](justact::Effect).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Effect<'f, 's> {
     /// The truth wrapped by this effect.
-    pub truth:    Truth<'f, 's>,
+    pub fact:     Atom<&'f str, &'s str>,
     /// The identifier of the affector.
     pub affector: Ident<&'f str, &'s str>,
 }
@@ -78,23 +59,24 @@ impl<'f, 's> justact::Affectored for Effect<'f, 's> {
     #[inline]
     fn affector_id(&self) -> &Self::AffectorId { &self.affector }
 }
-impl<'f, 's> justact::Effect for Effect<'f, 's> {}
+impl<'f, 's> justact::Effect for Effect<'f, 's> {
+    type Fact = Atom<&'f str, &'s str>;
+
+    #[inline]
+    fn fact(&self) -> &Self::Fact { &self.fact }
+}
 impl<'f, 's> justact::Identifiable for Effect<'f, 's> {
     type Id = Atom<&'f str, &'s str>;
 
     #[inline]
-    fn id(&self) -> &Self::Id { &self.truth.fact }
-}
-impl<'f, 's> justact::Truth for Effect<'f, 's> {
-    #[inline]
-    fn value(&self) -> Option<bool> { self.truth.value }
+    fn id(&self) -> &Self::Id { &self.fact }
 }
 
 /// Wraps an [`Interpretation`] in order to implement [`Denotation`](justact::Denotation).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Denotation<'f, 's> {
     /// A set of hard truths (including the effects, naively).
-    truths:  HashMap<Atom<&'f str, &'s str>, Truth<'f, 's>>,
+    truths:  HashMap<Atom<&'f str, &'s str>, Option<bool>>,
     /// An additional set of effects extracted from the `int`erpretation.
     effects: HashMap<Atom<&'f str, &'s str>, Effect<'f, 's>>,
 }
@@ -114,7 +96,7 @@ impl<'f, 's> Denotation<'f, 's> {
     /// A new Denotation that is JustAct^{TM} compliant.
     #[inline]
     pub fn from_interpretation(int: Interpretation<'f, 's>, pat: Atom<&'f str, &'s str>, affector: AtomArg<&'f str, &'s str>) -> Self {
-        let mut truths: HashMap<Atom<&'f str, &'s str>, Truth<'f, 's>> = HashMap::new();
+        let mut truths: HashMap<Atom<&'f str, &'s str>, Option<bool>> = HashMap::new();
         let mut effects: HashMap<Atom<&'f str, &'s str>, Effect<'f, 's>> = HashMap::new();
         for (fact, value) in int.into_iter() {
             // See if the fact matches the pattern
@@ -150,12 +132,12 @@ impl<'f, 's> Denotation<'f, 's> {
                     };
 
                     // Insert it!
-                    effects.insert(fact.clone(), Effect { truth: Truth { fact: fact.clone(), value }, affector: affector.clone() });
+                    effects.insert(fact.clone(), Effect { fact: fact.clone(), affector: affector.clone() });
                 }
             }
 
             // Always add the truth as such
-            truths.insert(fact.clone(), Truth { fact, value });
+            truths.insert(fact, value);
         }
 
         // OK, return the denotation!
@@ -164,9 +146,12 @@ impl<'f, 's> Denotation<'f, 's> {
 }
 impl<'f, 's> justact::Denotation for Denotation<'f, 's> {
     type Effect = Effect<'f, 's>;
-    type Truth = Truth<'f, 's>;
+    type Fact = Atom<&'f str, &'s str>;
+
+    #[inline]
+    fn truth_of(&self, fact: &Self::Fact) -> Option<bool> { self.truths.get(fact).cloned().unwrap_or(Some(false)) }
 }
-impl<'f, 's> justact::Set<Effect<'f, 's>> for Denotation<'f, 's> {
+impl<'f, 's> justact::Map<Effect<'f, 's>> for Denotation<'f, 's> {
     type Error = Infallible;
 
     #[inline]
@@ -180,18 +165,20 @@ impl<'f, 's> justact::Set<Effect<'f, 's>> for Denotation<'f, 's> {
         Ok(self.effects.values())
     }
 }
-impl<'f, 's> justact::Set<Truth<'f, 's>> for Denotation<'f, 's> {
+impl<'f, 's> justact::Set<Atom<&'f str, &'s str>> for Denotation<'f, 's> {
     type Error = Infallible;
 
     #[inline]
-    fn get(&self, id: &<Truth<'f, 's> as justact::Identifiable>::Id) -> Result<Option<&Truth<'f, 's>>, Self::Error> { Ok(self.truths.get(id)) }
+    fn get(&self, elem: &Atom<&'f str, &'s str>) -> Result<Option<&Atom<&'f str, &'s str>>, Self::Error> {
+        Ok(self.truths.get_key_value(elem).map(|(k, _)| k))
+    }
 
     #[inline]
-    fn iter<'a>(&'a self) -> Result<impl Iterator<Item = &'a Truth<'f, 's>>, Self::Error>
+    fn iter<'a>(&'a self) -> Result<impl Iterator<Item = &'a Atom<&'f str, &'s str>>, Self::Error>
     where
-        Truth<'f, 's>: 'a + justact::Identifiable,
+        Atom<&'f str, &'s str>: 'a,
     {
-        Ok(self.truths.values())
+        Ok(self.truths.keys())
     }
 }
 
@@ -272,7 +259,7 @@ impl<'f, 's> justact::Policy for Policy<'f, 's> {
     fn is_valid(&self) -> bool {
         // Check whether error is true in the truths
         let atom: Atom<&'static str, &'static str> = Atom { ident: Ident { value: Span::new("<datalog::Policy::truths>", "error") }, args: None };
-        if let Some(truth) = self.truths().truths.get(&atom) { truth.value != Some(true) } else { true }
+        if let Some(value) = self.truths().truths.get(&atom) { value != &Some(true) } else { true }
     }
 
     #[inline]
@@ -314,7 +301,7 @@ impl justact::Extractor<str, str, str> for Extractor {
     #[inline]
     fn extract<'m, M: 'm + justact::Message<Id = str, AuthorId = str, Payload = str>>(
         &self,
-        msgs: &'m impl justact::Set<M>,
+        msgs: &'m impl justact::Map<M>,
     ) -> Result<Self::Policy<'m>, Self::Error<'m>> {
         // Attempt to iterate over the messages
         let iter = msgs.iter().map_err(|err| SyntaxError::Iter { what: std::any::type_name::<M>(), err: Box::new(err) })?;
@@ -388,7 +375,7 @@ mod tests {
 
     use datalog::ast::{Atom, AtomArg, AtomArgs, Comma, Ident, Parens, Span, datalog, punct};
 
-    use super::{Denotation, Effect, Extractor, Policy, Truth};
+    use super::{Denotation, Effect, Extractor, Policy};
     mod justact {
         pub use ::justact::auxillary::Authored;
         pub use ::justact::messages::MessageSet;
@@ -441,7 +428,7 @@ mod tests {
         #[inline]
         fn payload(&self) -> &Self::Payload { &self.payload }
     }
-    impl justact::Set<Self> for Message {
+    impl justact::Map<Self> for Message {
         type Error = Infallible;
         #[inline]
         fn get(&self, id: &<Self as justact::Identifiable>::Id) -> Result<Option<&Self>, Self::Error>
@@ -503,7 +490,7 @@ mod tests {
                 (Atom { ident: Ident { value: Span::new("<test_truths>", "bar") }, args: None }, Some(false)),
             ]
             .into_iter()
-            .map(|(a, v)| (a.clone(), Truth { fact: a, value: v }))
+            .map(|(a, v)| (a, v))
             .collect(),
             effects: HashMap::new(),
         })
@@ -514,13 +501,10 @@ mod tests {
         pol.spec = datalog!( effect(amy, read). effect(amy, write) :- baz(A). );
         let den = <Policy as justact::Policy>::truths(&pol);
         assert_eq!(den, Denotation {
-            truths:  [(make_effect("amy", "read"), Some(true))].into_iter().map(|(a, v)| (a.clone(), Truth { fact: a, value: v })).collect(),
-            effects: [(make_effect("amy", "read"), Some(true))]
+            truths:  [make_effect("amy", "read")].into_iter().map(|a| (a, Some(true))).collect(),
+            effects: [make_effect("amy", "read")]
                 .into_iter()
-                .map(|(a, v)| (a.clone(), Effect {
-                    truth:    Truth { fact: a, value: v },
-                    affector: Ident { value: Span::new("<test_effects>", "amy") },
-                }))
+                .map(|a| (a.clone(), Effect { fact: a, affector: Ident { value: Span::new("<test_effects>", "amy") } }))
                 .collect(),
         })
     }

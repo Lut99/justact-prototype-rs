@@ -4,7 +4,7 @@
 //  Created:
 //    19 Dec 2024, 12:09:23
 //  Last edited:
-//    06 Jan 2025, 16:02:47
+//    13 Jan 2025, 15:01:09
 //  Auto updated?
 //    Yes
 //
@@ -19,12 +19,12 @@ use std::ops::{Deref, DerefMut};
 
 use slick::infer::Config;
 use slick::text::Text;
-use slick::{Atom, GroundAtom, Program, parse};
+use slick::{Atom, GroundAtom, Program, Rule, RuleBody, parse};
 mod justact {
     pub use ::justact::auxillary::{Affectored, Identifiable};
+    pub use ::justact::collections::{InfallibleSet, Map, Set};
     pub use ::justact::messages::Message;
-    pub use ::justact::policies::{Denotation, Effect, Extractor, Policy, Truth};
-    pub use ::justact::sets::{InfallibleSet, Set};
+    pub use ::justact::policies::{Denotation, Effect, Extractor, Policy};
 }
 use error_trace::trace;
 use thiserror::Error;
@@ -57,34 +57,11 @@ pub enum AffectorAtom {
 
 
 /***** LIBRARY *****/
-/// Wraps a Slick (fact, truth) pair as a [`Truth`](justact::Truth).
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Truth {
-    /// The atom we're wrapping.
-    pub fact:  GroundAtom,
-    /// The value of the atom.
-    ///
-    /// Note that, Slick being Slick, it never occurs this is `Some(false)`. That can only happen
-    /// implicitly by asking the truth value of an atom which is not in the denotation (and
-    /// therefore false).
-    pub value: Option<bool>,
-}
-impl justact::Identifiable for Truth {
-    type Id = GroundAtom;
-
-    #[inline]
-    fn id(&self) -> &Self::Id { &self.fact }
-}
-impl justact::Truth for Truth {
-    #[inline]
-    fn value(&self) -> Option<bool> { self.value }
-}
-
 /// Wraps a Slick (truth, affector) pair as an [`Effect`](justact::Effect).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Effect {
     /// The truth wrapped.
-    pub truth:    Truth,
+    pub fact:     GroundAtom,
     /// The affector who does this effect.
     pub affector: GroundAtom,
 }
@@ -95,22 +72,23 @@ impl justact::Affectored for Effect {
     fn affector_id(&self) -> &Self::AffectorId { &self.affector }
 }
 impl justact::Identifiable for Effect {
-    type Id = <Truth as justact::Identifiable>::Id;
+    type Id = GroundAtom;
 
     #[inline]
-    fn id(&self) -> &Self::Id { &self.truth.fact }
+    fn id(&self) -> &Self::Id { &self.fact }
 }
-impl justact::Effect for Effect {}
-impl justact::Truth for Effect {
+impl justact::Effect for Effect {
+    type Fact = GroundAtom;
+
     #[inline]
-    fn value(&self) -> Option<bool> { self.truth.value }
+    fn fact(&self) -> &Self::Fact { &self.fact }
 }
 
 /// Wraps a Slick denotation as a [`Denotation`](justact::Denotation).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Denotation {
     /// The set of truths computed from the slick denotation.
-    truths:  HashMap<GroundAtom, Truth>,
+    truths:  HashMap<GroundAtom, Option<bool>>,
     /// The set of effects computed from the slick denotation.
     effects: HashMap<GroundAtom, Effect>,
 }
@@ -134,7 +112,7 @@ impl Denotation {
     /// A new Denotation that is JustAct^{TM} compliant.
     #[inline]
     pub fn from_interpretation(int: slick::infer::Denotation, pat: Atom, affector: AffectorAtom) -> Self {
-        let mut truths: HashMap<GroundAtom, Truth> = HashMap::new();
+        let mut truths: HashMap<GroundAtom, Option<bool>> = HashMap::new();
         let mut effects: HashMap<GroundAtom, Effect> = HashMap::new();
         for (fact, value) in int.trues.into_iter().map(|v| (v, Some(true))).chain(int.unknowns.into_iter().map(|v| (v, None))) {
             // See if the fact matches the effect pattern
@@ -184,10 +162,7 @@ impl Denotation {
                 // See if we have a constant affector or can match
                 match affector {
                     AffectorAtom::Constant(c) => {
-                        effects.insert(fact.clone(), Effect {
-                            truth:    Truth { fact: fact.clone(), value: Some(true) },
-                            affector: GroundAtom::Constant(c),
-                        });
+                        effects.insert(fact.clone(), Effect { fact: fact.clone(), affector: GroundAtom::Constant(c) });
                     },
                     AffectorAtom::Variable(v) => {
                         fn get_var_contents<'f>(fact: &'f GroundAtom, pat: &Atom, affector_var: &Text) -> Option<&'f GroundAtom> {
@@ -215,10 +190,7 @@ impl Denotation {
                         }
                         match get_var_contents(&fact, &pat, &v) {
                             Some(affector) => {
-                                effects.insert(fact.clone(), Effect {
-                                    truth:    Truth { fact: fact.clone(), value: Some(true) },
-                                    affector: affector.clone(),
-                                });
+                                effects.insert(fact.clone(), Effect { fact: fact.clone(), affector: affector.clone() });
                             },
                             None => panic!("Did not find affector variable {v:?} in matched atom {fact:?}"),
                         }
@@ -227,7 +199,7 @@ impl Denotation {
             }
 
             // Always add the truth as such
-            truths.insert(fact.clone(), Truth { fact, value });
+            truths.insert(fact, value);
         }
 
         // OK, return the denotation!
@@ -243,8 +215,8 @@ impl Denotation {
     pub fn is_valid(&self) -> bool {
         // Check whether error is true in the truths
         let atom = GroundAtom::Constant(Text::from_str("error"));
-        for truth in <Denotation as justact::InfallibleSet<Truth>>::iter(self) {
-            match &truth.fact {
+        for fact in <Denotation as justact::InfallibleSet<GroundAtom>>::iter(self) {
+            match fact {
                 GroundAtom::Constant(c) => {
                     if c == &Text::from_str("error") {
                         return false;
@@ -260,11 +232,11 @@ impl Denotation {
         true
     }
 }
-impl justact::Set<Effect> for Denotation {
+impl justact::Map<Effect> for Denotation {
     type Error = Infallible;
 
     #[inline]
-    fn get(&self, id: &<Truth as justact::Identifiable>::Id) -> Result<Option<&Effect>, Self::Error> { Ok(self.effects.get(id)) }
+    fn get(&self, id: &<Effect as justact::Identifiable>::Id) -> Result<Option<&Effect>, Self::Error> { Ok(self.effects.get(id)) }
 
     #[inline]
     fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s Effect>, Self::Error>
@@ -274,23 +246,26 @@ impl justact::Set<Effect> for Denotation {
         Ok(self.effects.values())
     }
 }
-impl justact::Set<Truth> for Denotation {
+impl justact::Set<GroundAtom> for Denotation {
     type Error = Infallible;
 
     #[inline]
-    fn get(&self, id: &<Truth as justact::Identifiable>::Id) -> Result<Option<&Truth>, Self::Error> { Ok(self.truths.get(id)) }
+    fn get(&self, elem: &GroundAtom) -> Result<Option<&GroundAtom>, Self::Error> { Ok(self.truths.get_key_value(elem).map(|(k, _)| k)) }
 
     #[inline]
-    fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s Truth>, Self::Error>
+    fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s GroundAtom>, Self::Error>
     where
-        Truth: 's + justact::Identifiable,
+        GroundAtom: 's,
     {
-        Ok(self.truths.values())
+        Ok(self.truths.keys())
     }
 }
 impl justact::Denotation for Denotation {
     type Effect = Effect;
-    type Truth = Truth;
+    type Fact = GroundAtom;
+
+    #[inline]
+    fn truth_of(&self, fact: &Self::Fact) -> Option<bool> { self.truths.get(fact).cloned().unwrap_or(Some(false)) }
 }
 
 
@@ -372,7 +347,11 @@ impl justact::Policy for Policy {
         ]);
         match self.program.clone().denotation(&Config::default()) {
             Ok(den) => Denotation::from_interpretation(den, self.pat.clone(), self.affector.clone()),
-            Err(_) => Denotation { truths: HashMap::from([(atom.clone(), Truth { fact: atom, value: Some(true) })]), effects: HashMap::new() },
+            Err(err) => {
+                #[cfg(feature = "log")]
+                log::error!("Failed to compute denotation: {:?}\n\nProgram:\n{}\n{:?}\n{}\n", err, "-".repeat(80), self.program, "-".repeat(80));
+                Denotation { truths: HashMap::from([(atom, Some(true))]), effects: HashMap::new() }
+            },
         }
     }
 
@@ -410,61 +389,68 @@ impl justact::Extractor<str, str, str> for Extractor {
     #[inline]
     fn extract<'m, M: 'm + justact::Message<Id = str, AuthorId = str, Payload = str>>(
         &self,
-        msgs: &'m impl justact::Set<M>,
+        msgs: &'m impl justact::Map<M>,
     ) -> Result<Self::Policy<'m>, Self::Error<'m>> {
         // Attempt to iterate over the messages
         let iter = msgs.iter().map_err(|err| SyntaxError::Iter { what: std::any::type_name::<M>(), err: Box::new(err) })?;
 
         // Parse the policy in the messages one-by-one
-        let mut add_error: bool = false;
         let mut policy = Policy::default();
         for msg in iter {
             // Parse as UTF-8
             let snippet: &str = msg.payload();
 
             // Parse as Slick
-            let msg_prog: Program = match parse::program(snippet) {
+            let mut msg_prog: Program = match parse::program(snippet) {
                 Ok((_, prog)) => prog,
                 Err(err) => return Err(SyntaxError::Slick { err }),
             };
 
-            // // Check if there's any illegal rules
-            // if !add_error {
-            //     'rules: for rule in &msg_prog.rules {
-            //         for cons in rule.consequents.values() {
-            //             // If a consequent begins with 'ctl-'...
-            //             if cons.ident.value.value().starts_with("ctl-") || cons.ident.value.value().starts_with("ctl_") {
-            //                 // ...and its first argument is _not_ the author of the message...
-            //                 if let Some(arg) = cons.args.iter().flat_map(|a| a.args.values().next()).next() {
-            //                     if arg.ident().value.value() == msg.author_id() {
-            //                         continue;
-            //                     } else {
-            //                         // ...then we derive error (it is not the author)
-            //                         add_error = true;
-            //                         break 'rules;
-            //                     }
-            //                 } else {
-            //                     // ...then we derive error (there are no arguments)
-            //                     add_error = true;
-            //                     break 'rules;
-            //                 }
-            //             }
-            //         }
-            //     }
-            // }
+            // Search for any illegal `Fact within (Author M)` messages
+            'rule: for rule in &mut msg_prog.rules {
+                for cons in &rule.consequents {
+                    if let Atom::Tuple(atoms) = cons {
+                        if let [Atom::Variable(_), Atom::Constant(within), Atom::Tuple(nested)] = atoms.as_slice() {
+                            if let [Atom::Variable(_), Atom::Variable(_)] = nested.as_slice() {
+                                if within == &Text::from_str("within") {
+                                    // Alright, full match of the illegal rule; replace it with error as a whole
+                                    *rule = Rule {
+                                        consequents: vec![
+                                            Atom::Constant(Text::from_str("error")),
+                                            Atom::Tuple(vec![
+                                                Atom::Constant(Text::from_str("illegal")),
+                                                Atom::Constant(Text::from_str("fact")),
+                                                Atom::Constant(Text::from_str("within")),
+                                            ]),
+                                        ],
+                                        rule_body:   RuleBody { pos_antecedents: Vec::new(), neg_antecedents: Vec::new(), checks: Vec::new() },
+                                    };
+                                    continue 'rule;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Now generate additional within facts
+            let mut within: Vec<Rule> = Vec::with_capacity(msg_prog.rules.len());
+            for rule in &msg_prog.rules {
+                for cons in &rule.consequents {
+                    within.push(Rule {
+                        consequents: vec![Atom::Tuple(vec![
+                            cons.clone(),
+                            Atom::Constant(Text::from_str("within")),
+                            Atom::Tuple(vec![Atom::Constant(Text::from_str(msg.author_id())), Atom::Constant(Text::from_str(msg.id()))]),
+                        ])],
+                        rule_body:   RuleBody { pos_antecedents: vec![cons.clone()], neg_antecedents: Vec::new(), checks: Vec::new() },
+                    });
+                }
+            }
+            msg_prog.rules.extend(within);
 
             // OK, now we can add all the rules together
             policy.program.rules.extend(msg_prog.rules);
-        }
-
-        // If there were any illegal rules, inject error
-        if add_error {
-            // // Build the list of consequents
-            // let mut consequents: Punctuated<Atom<&'m str, &'m str>, Comma<&'m str, &'m str>> = Punctuated::new();
-            // consequents.push_first(Atom { ident: Ident { value: Span::new("<datalog::Extractor::extract>", "error") }, args: None });
-
-            // // Then add the rule
-            // policy.spec.rules.push(Rule { consequents, tail: None, dot: Dot { span: Span::new("<datalog::Extractor::extract>", ".") } })
         }
 
         // OK, return the spec
@@ -529,7 +515,7 @@ mod tests {
         #[inline]
         fn payload(&self) -> &Self::Payload { &self.payload }
     }
-    impl justact::Set<Self> for Message {
+    impl justact::Map<Self> for Message {
         type Error = Infallible;
         #[inline]
         fn get(&self, id: &<Self as justact::Identifiable>::Id) -> Result<Option<&Self>, Self::Error>
@@ -550,7 +536,7 @@ mod tests {
 
     #[test]
     fn test_extract_policy_single() {
-        let msg = Message { id: "A".into(), author_id: "Amy".into(), payload: "foo. bar if baz A.".into() };
+        let msg = Message { id: "a".into(), author_id: "amy".into(), payload: "foo. bar if baz A.".into() };
         let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msg).unwrap();
         assert_eq!(pol.program, Program {
             rules: vec![
@@ -565,6 +551,22 @@ mod tests {
                         neg_antecedents: vec![],
                         checks: vec![],
                     },
+                },
+                Rule {
+                    consequents: vec![Atom::Tuple(vec![
+                        Atom::Constant(Text::from_str("foo")),
+                        Atom::Constant(Text::from_str("within")),
+                        Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("a"))])
+                    ])],
+                    rule_body:   RuleBody { pos_antecedents: vec![Atom::Constant(Text::from_str("foo"))], neg_antecedents: vec![], checks: vec![] },
+                },
+                Rule {
+                    consequents: vec![Atom::Tuple(vec![
+                        Atom::Constant(Text::from_str("bar")),
+                        Atom::Constant(Text::from_str("within")),
+                        Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("a"))])
+                    ])],
+                    rule_body:   RuleBody { pos_antecedents: vec![Atom::Constant(Text::from_str("bar"))], neg_antecedents: vec![], checks: vec![] },
                 }
             ],
         });
@@ -572,8 +574,8 @@ mod tests {
     #[test]
     fn test_extract_policy_multi() {
         // Construct a set of messages
-        let msg1 = Message { id: "A".into(), author_id: "Amy".into(), payload: "foo.".into() };
-        let msg2 = Message { id: "B".into(), author_id: "Bob".into(), payload: "bar :- baz(A).".into() };
+        let msg1 = Message { id: "a".into(), author_id: "amy".into(), payload: "foo.".into() };
+        let msg2 = Message { id: "b".into(), author_id: "bob".into(), payload: "bar :- baz(A).".into() };
         let msgs = justact::MessageSet::from([msg1, msg2]);
 
         // Extract the policy from it
@@ -588,9 +590,33 @@ mod tests {
                             rule_body:   RuleBody { pos_antecedents: vec![], neg_antecedents: vec![], checks: vec![] },
                         },
                         Rule {
+                            consequents: vec![Atom::Tuple(vec![
+                                Atom::Constant(Text::from_str("foo")),
+                                Atom::Constant(Text::from_str("within")),
+                                Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("a"))])
+                            ])],
+                            rule_body:   RuleBody {
+                                pos_antecedents: vec![Atom::Constant(Text::from_str("foo"))],
+                                neg_antecedents: vec![],
+                                checks: vec![],
+                            },
+                        },
+                        Rule {
                             consequents: vec![Atom::Constant(Text::from_str("bar"))],
                             rule_body:   RuleBody {
                                 pos_antecedents: vec![Atom::Tuple(vec![Atom::Constant(Text::from_str("baz")), Atom::Variable(Text::from_str("A"))])],
+                                neg_antecedents: vec![],
+                                checks: vec![],
+                            },
+                        },
+                        Rule {
+                            consequents: vec![Atom::Tuple(vec![
+                                Atom::Constant(Text::from_str("bar")),
+                                Atom::Constant(Text::from_str("within")),
+                                Atom::Tuple(vec![Atom::Constant(Text::from_str("bob")), Atom::Constant(Text::from_str("b"))])
+                            ])],
+                            rule_body:   RuleBody {
+                                pos_antecedents: vec![Atom::Constant(Text::from_str("bar"))],
                                 neg_antecedents: vec![],
                                 checks: vec![],
                             },
@@ -612,8 +638,32 @@ mod tests {
                                 },
                             },
                             Rule {
+                                consequents: vec![Atom::Tuple(vec![
+                                    Atom::Constant(Text::from_str("bar")),
+                                    Atom::Constant(Text::from_str("within")),
+                                    Atom::Tuple(vec![Atom::Constant(Text::from_str("bob")), Atom::Constant(Text::from_str("b"))])
+                                ])],
+                                rule_body:   RuleBody {
+                                    pos_antecedents: vec![Atom::Constant(Text::from_str("bar"))],
+                                    neg_antecedents: vec![],
+                                    checks: vec![],
+                                },
+                            },
+                            Rule {
                                 consequents: vec![Atom::Constant(Text::from_str("foo"))],
                                 rule_body:   RuleBody { pos_antecedents: vec![], neg_antecedents: vec![], checks: vec![] },
+                            },
+                            Rule {
+                                consequents: vec![Atom::Tuple(vec![
+                                    Atom::Constant(Text::from_str("foo")),
+                                    Atom::Constant(Text::from_str("within")),
+                                    Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("a"))])
+                                ])],
+                                rule_body:   RuleBody {
+                                    pos_antecedents: vec![Atom::Constant(Text::from_str("foo"))],
+                                    neg_antecedents: vec![],
+                                    checks: vec![],
+                                },
                             },
                         ],
                     }
@@ -639,10 +689,7 @@ mod tests {
         pol.program = parse::program("foo. bar if baz A.").unwrap().1;
         let den = <Policy as justact::Policy>::truths(&pol);
         assert_eq!(den, Denotation {
-            truths:  [(GroundAtom::Constant(Text::from_str("foo")), Some(true)),]
-                .into_iter()
-                .map(|(a, v)| (a.clone(), Truth { fact: a, value: v }))
-                .collect(),
+            truths:  [GroundAtom::Constant(Text::from_str("foo"))].into_iter().map(|a| (a, Some(true))).collect(),
             effects: HashMap::new(),
         })
     }
@@ -652,13 +699,10 @@ mod tests {
         pol.program = parse::program("effect read by amy. effect write by amy if baz A.").unwrap().1;
         let den = <Policy as justact::Policy>::truths(&pol);
         assert_eq!(den, Denotation {
-            truths:  [(make_flat_ground_atom_str("effect read by amy"), Some(true))]
+            truths:  [make_flat_ground_atom_str("effect read by amy")].into_iter().map(|a| (a, Some(true))).collect(),
+            effects: [make_flat_ground_atom_str("effect read by amy")]
                 .into_iter()
-                .map(|(a, v)| (a.clone(), Truth { fact: a, value: v }))
-                .collect(),
-            effects: [(make_flat_ground_atom_str("effect read by amy"), Some(true))]
-                .into_iter()
-                .map(|(a, v)| (a.clone(), Effect { truth: Truth { fact: a, value: v }, affector: GroundAtom::Constant(Text::from_str("amy")) }))
+                .map(|a| (a.clone(), Effect { fact: a, affector: GroundAtom::Constant(Text::from_str("amy")) }))
                 .collect(),
         })
     }
@@ -708,7 +752,7 @@ mod tests {
         assert_eq!(
             den.effects,
             HashMap::from([(make_flat_ground_atom_str("effect read by amy"), Effect {
-                truth:    Truth { fact: make_flat_ground_atom_str("effect read by amy"), value: Some(true) },
+                fact:     make_flat_ground_atom_str("effect read by amy"),
                 affector: make_flat_ground_atom_str("amy"),
             })])
         );
@@ -720,7 +764,7 @@ mod tests {
         assert_eq!(
             den.effects,
             HashMap::from([(make_flat_ground_atom_str("effect read by amy"), Effect {
-                truth:    Truth { fact: make_flat_ground_atom_str("effect read by amy"), value: Some(true) },
+                fact:     make_flat_ground_atom_str("effect read by amy"),
                 affector: make_flat_ground_atom_str("amy"),
             })])
         );
@@ -733,11 +777,11 @@ mod tests {
             den.effects,
             HashMap::from([
                 (make_flat_ground_atom_str("effect read by amy"), Effect {
-                    truth:    Truth { fact: make_flat_ground_atom_str("effect read by amy"), value: Some(true) },
+                    fact:     make_flat_ground_atom_str("effect read by amy"),
                     affector: make_flat_ground_atom_str("amy"),
                 }),
                 (make_flat_ground_atom_str("effect write by bob"), Effect {
-                    truth:    Truth { fact: make_flat_ground_atom_str("effect write by bob"), value: Some(true) },
+                    fact:     make_flat_ground_atom_str("effect write by bob"),
                     affector: make_flat_ground_atom_str("bob"),
                 })
             ])
@@ -751,14 +795,40 @@ mod tests {
             den.effects,
             HashMap::from([
                 (make_flat_ground_atom_str("effect read by amy"), Effect {
-                    truth:    Truth { fact: make_flat_ground_atom_str("effect read by amy"), value: Some(true) },
+                    fact:     make_flat_ground_atom_str("effect read by amy"),
                     affector: make_flat_ground_atom_str("amy"),
                 }),
                 (make_flat_ground_atom_str("effect write by bob"), Effect {
-                    truth:    Truth { fact: make_flat_ground_atom_str("effect write by bob"), value: Some(true) },
+                    fact:     make_flat_ground_atom_str("effect write by bob"),
                     affector: make_flat_ground_atom_str("bob"),
                 })
             ])
         );
+    }
+
+    /// Tests if the author rules work as expected.
+    #[test]
+    fn test_reflection() {
+        // First, see if the derivation works.
+        let msg1 = Message { id: "a".into(), author_id: "amy".into(), payload: "foo. (bar foo) if foo. baz X if bar X.".into() };
+        let msg2 = Message { id: "b".into(), author_id: "bob".into(), payload: "qux X if baz X.".into() };
+        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &justact::MessageSet::from([msg1, msg2])).unwrap();
+        let den = <Policy as justact::Policy>::truths(&pol);
+        assert_eq!(den, Denotation {
+            truths:  [
+                make_flat_ground_atom_str("foo"),
+                make_flat_ground_atom_str("bar foo"),
+                make_flat_ground_atom_str("baz foo"),
+                make_flat_ground_atom_str("qux foo"),
+                make_flat_ground_atom_str("foo within (amy a)"),
+                make_flat_ground_atom_str("(bar foo) within (amy a)"),
+                make_flat_ground_atom_str("(baz foo) within (amy a)"),
+                make_flat_ground_atom_str("(qux foo) within (bob b)"),
+            ]
+            .into_iter()
+            .map(|a| (a.clone(), Some(true)))
+            .collect(),
+            effects: HashMap::new(),
+        });
     }
 }
