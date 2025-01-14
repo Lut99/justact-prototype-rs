@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:26:24
 //  Last edited:
-//    13 Jan 2025, 17:22:39
+//    14 Jan 2025, 16:25:03
 //  Auto updated?
 //    Yes
 //
@@ -12,7 +12,7 @@
 //!   Implements the four sets.
 //
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::hash::Hash;
 
@@ -20,10 +20,55 @@ mod justact {
     pub use ::justact::auxillary::Identifiable;
     pub use ::justact::collections::Selector;
     pub use ::justact::collections::map::{Map, MapAsync};
+    pub use ::justact::collections::set::{Set, SetSync};
+    pub use ::justact::times::{Times, TimesSync};
 }
 
 
 /***** LIBRARY *****/
+/// Defines a _synchronous_ set for keeping track of the (current) time.
+pub struct Times {
+    /// The current time, if any.
+    current: Option<u128>,
+    /// The set of all known times.
+    times:   HashSet<u128>,
+}
+impl justact::Set<u128> for Times {
+    type Error = Infallible;
+
+    #[inline]
+    fn get(&self, id: &u128) -> Result<Option<&u128>, Self::Error> { Ok(self.times.get(id)) }
+
+    #[inline]
+    fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s u128>, Self::Error>
+    where
+        u128: 's,
+    {
+        Ok(self.times.iter())
+    }
+}
+impl justact::SetSync<u128> for Times {
+    #[inline]
+    fn add(&mut self, elem: u128) -> Result<bool, Self::Error> { Ok(self.times.insert(elem)) }
+}
+impl justact::Times for Times {
+    type Subset = Option<u128>;
+    type Timestamp = u128;
+
+    #[inline]
+    fn current(&self) -> Result<Self::Subset, Self::Error> { Ok(self.current) }
+}
+impl justact::TimesSync for Times {
+    #[inline]
+    fn add_current(&mut self, timestamp: Self::Timestamp) -> Result<bool, Self::Error> {
+        let existed: bool = if let Some(current) = self.current { current == timestamp } else { false };
+        self.current = Some(timestamp);
+        Ok(existed)
+    }
+}
+
+
+
 /// A generic _asynchronous set_, which offers each agent a unique view to it.
 pub struct MapAsync<E>
 where
@@ -80,8 +125,6 @@ where
     pub fn scope<'s, 'i>(&'s mut self, id: &'i str) -> MapAsyncView<'s, 'i, E> { MapAsyncView::new(self, id) }
 }
 
-
-
 /// Defines the view of a specific agent on an [`AsyncMap`].
 pub struct MapAsyncView<'s, 'i, E>
 where
@@ -108,7 +151,6 @@ where
     /// A new MapAsyncView ready to show an agent what's it all about.
     fn new(parent: &'s mut MapAsync<E>, id: &'i str) -> Self { Self { parent, id } }
 }
-
 impl<'s, 'i, E> justact::Map<E> for MapAsyncView<'s, 'i, E>
 where
     E: justact::Identifiable,
