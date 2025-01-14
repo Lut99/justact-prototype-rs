@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:05:42
 //  Last edited:
-//    14 Jan 2025, 16:42:36
+//    14 Jan 2025, 17:17:50
 //  Auto updated?
 //    Yes
 //
@@ -64,7 +64,12 @@ pub struct Runtime {
     enacted: MapAsync<Action>,
 }
 impl justact::Runtime for Runtime {
+    type MessageId = str;
+    type ActionId = str;
     type AgentId = str;
+    type SynchronizerId = str;
+    type Payload = str;
+    type Timestamp = u128;
     type Error = Error;
 
 
@@ -72,10 +77,10 @@ impl justact::Runtime for Runtime {
     fn run<A>(
         &mut self,
         agents: impl IntoIterator<Item = A>,
-        mut synchronizer: impl justact::Synchronizer<Id = Self::AgentId>,
+        mut synchronizer: impl justact::Synchronizer<Self::MessageId, Self::ActionId, Self::Payload, Self::Timestamp, Id = Self::SynchronizerId>,
     ) -> Result<(), Self::Error>
     where
-        A: justact::Agent<Id = Self::AgentId>,
+        A: justact::Agent<Self::MessageId, Self::ActionId, Self::Payload, Self::Timestamp, Id = Self::AgentId>,
     {
         // Enter a loop to execute agents
         let mut agents: Vec<A> = agents.into_iter().collect();

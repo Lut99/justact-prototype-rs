@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:26:24
 //  Last edited:
-//    14 Jan 2025, 16:25:03
+//    14 Jan 2025, 17:11:48
 //  Auto updated?
 //    Yes
 //
@@ -61,6 +61,10 @@ impl justact::Times for Times {
 impl justact::TimesSync for Times {
     #[inline]
     fn add_current(&mut self, timestamp: Self::Timestamp) -> Result<bool, Self::Error> {
+        // Always add to the set
+        <Self as justact::SetSync<u128>>::add(self, timestamp)?;
+
+        // Then add it as the current timestamp, but only by checking if it exists already
         let existed: bool = if let Some(current) = self.current { current == timestamp } else { false };
         self.current = Some(timestamp);
         Ok(existed)
