@@ -4,7 +4,7 @@
 //  Created:
 //    26 Nov 2024, 11:54:14
 //  Last edited:
-//    13 Jan 2025, 17:18:16
+//    15 Jan 2025, 10:57:09
 //  Auto updated?
 //    Yes
 //
@@ -426,6 +426,15 @@ mod tests {
     }
     impl justact::Message for Message {
         type Payload = str;
+
+        #[inline]
+        fn new(id: <Self::Id as ToOwned>::Owned, author_id: <Self::AuthorId as ToOwned>::Owned, payload: <Self::Payload as ToOwned>::Owned) -> Self
+        where
+            Self: Sized,
+        {
+            Self { id: id.to_owned(), author_id: author_id.to_owned(), payload: payload.to_owned() }
+        }
+
         #[inline]
         fn payload(&self) -> &Self::Payload { &self.payload }
     }

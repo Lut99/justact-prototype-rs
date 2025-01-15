@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:05:42
 //  Last edited:
-//    14 Jan 2025, 17:17:50
+//    15 Jan 2025, 16:21:14
 //  Auto updated?
 //    Yes
 //
@@ -12,19 +12,19 @@
 //!   Defines the main runtime regarding the JustAct policy engine.
 //
 
-use std::collections::HashMap;
 use std::error;
 use std::ops::ControlFlow;
-use std::sync::Arc;
+use std::task::Poll;
 
+#[cfg(feature = "log")]
+use log::debug;
 use thiserror::Error;
 
-use crate::sets::{MapAsync, Times};
-use crate::wire::{Action, Message};
+use crate::io::TracingSet;
+use crate::sets::{Actions, Agreements, Statements, Times};
 
 mod justact {
     pub use ::justact::actors::{Agent, Synchronizer, View};
-    pub use ::justact::agreements::Agreement;
     pub use ::justact::runtime::Runtime;
 }
 
@@ -55,17 +55,36 @@ pub enum Error {
 /// Defines the prototype runtime that will do things in-memory.
 pub struct Runtime {
     /// Defines the set of all times (and which are current).
-    times:   Times,
+    times:   TracingSet<Times>,
     /// Defines the set of all agreements.
-    agreed:  HashMap<String, justact::Agreement<Arc<Message>, u128>>,
+    agreed:  TracingSet<Agreements>,
     /// Defines the set of all stated messages.
-    stated:  MapAsync<Arc<Message>>,
+    stated:  TracingSet<Statements>,
     /// Defines the set of all enacted actions.
-    enacted: MapAsync<Action>,
+    enacted: TracingSet<Actions>,
+}
+impl Default for Runtime {
+    #[inline]
+    fn default() -> Self { Self::new() }
+}
+impl Runtime {
+    /// Constructor for the Runtime that initializes it with nothing done yet.
+    ///
+    /// # Returns
+    /// An empty Runtime, ready to [run](Runtime::run()).
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            times:   TracingSet(Times::new()),
+            agreed:  TracingSet(Agreements::new()),
+            stated:  TracingSet(Statements::new()),
+            enacted: TracingSet(Actions::new()),
+        }
+    }
 }
 impl justact::Runtime for Runtime {
-    type MessageId = str;
-    type ActionId = str;
+    type MessageId = (String, u32);
+    type ActionId = (String, u32);
     type AgentId = str;
     type SynchronizerId = str;
     type Payload = str;
@@ -82,22 +101,37 @@ impl justact::Runtime for Runtime {
     where
         A: justact::Agent<Self::MessageId, Self::ActionId, Self::Payload, Self::Timestamp, Id = Self::AgentId>,
     {
-        // Enter a loop to execute agents
+        // First, register any non-registered agents
         let mut agents: Vec<A> = agents.into_iter().collect();
+        for agent in &agents {
+            self.stated.register(agent.id());
+            self.enacted.register(agent.id());
+        }
+
+        // Enter a loop to execute agents
         loop {
-            // Go through the agents
-            for agent in &mut agents {
-                // Run the agent
-                let agent_id: String = agent.id().into();
-                if let Err(err) = agent.poll(justact::View {
-                    times:   &self.times,
-                    agreed:  &self.agreed,
-                    stated:  self.stated.scope(&agent_id),
-                    enacted: self.enacted.scope(&agent_id),
-                }) {
-                    return Err(Error::Agent { id: agent_id, err: Box::new(err) });
-                }
-            }
+            // Go through the agents and keep the ones that want to be kept
+            agents = agents
+                .into_iter()
+                .filter_map(|mut agent| {
+                    // Run the agent
+                    let agent_id: String = agent.id().into();
+                    match agent.poll(justact::View {
+                        times:   &self.times,
+                        agreed:  &self.agreed,
+                        stated:  self.stated.scope(&agent_id),
+                        enacted: self.enacted.scope(&agent_id),
+                    }) {
+                        Ok(Poll::Ready(_)) => {
+                            #[cfg(feature = "log")]
+                            debug!("Agent {agent_id:?} is complete.");
+                            None
+                        },
+                        Ok(Poll::Pending) => Some(Ok(agent)),
+                        Err(err) => Some(Err(Error::Agent { id: agent_id, err: Box::new(err) })),
+                    }
+                })
+                .collect::<Result<Vec<A>, Error>>()?;
 
             // Now run an update cycle through the synchronizer
             let sync_id: String = synchronizer.id().into();

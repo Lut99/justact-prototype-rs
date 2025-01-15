@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    14 Jan 2025, 17:18:18
+//    15 Jan 2025, 17:54:29
 //  Auto updated?
 //    Yes
 //
@@ -14,7 +14,6 @@
 //
 
 use std::error;
-use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
 use justact::actions::Action;
@@ -24,8 +23,8 @@ use justact::auxillary::Identifiable;
 use justact::collections::map::{MapAsync, MapSync};
 use justact::collections::set::InfallibleSet as _;
 use justact::messages::Message;
-use justact::policies::Policy;
 use justact::times::TimesSync;
+use log::debug;
 use thiserror::Error;
 
 
@@ -33,6 +32,9 @@ use thiserror::Error;
 /// The errors published by the Consortium.
 #[derive(Debug, Error)]
 pub enum Error {
+    /// Failed to add to the current set of agreements.
+    #[error("Failed to add agreements {author_id:?} {id:?}")]
+    AgreementsAdd { id: String, author_id: String, err: Box<dyn error::Error> },
     /// Failed to add to the current set of times.
     #[error("Failed to add current time {timestamp:?}")]
     TimesAddCurrent { timestamp: u128, err: Box<dyn error::Error> },
@@ -48,20 +50,25 @@ pub enum Error {
 /***** LIBRARY *****/
 /// Defines the consortium [`Synchronizer`], which has the power to define agreements and the
 /// current time.
-pub struct Consortium<P> {
-    /// The policy that is used by the consortium.
-    _policy: PhantomData<P>,
+pub struct Consortium {
+    /// The agreement published by the consortium.
+    agreement: &'static str,
 }
-impl<P> Identifiable for Consortium<P> {
+impl Consortium {
+    /// Constructor for the consortium.
+    ///
+    /// # Arguments
+    /// - `agreement`: The agreement (as a string Slick spec) that the consortium will publish.
+    #[inline]
+    pub const fn new(agreement: &'static str) -> Self { Self { agreement } }
+}
+impl Identifiable for Consortium {
     type Id = str;
 
     #[inline]
     fn id(&self) -> &Self::Id { "consortium" }
 }
-impl<P> Synchronizer<str, str, str, u128> for Consortium<P>
-where
-    P: Policy,
-{
+impl Synchronizer<(String, u32), (String, u32), str, u128> for Consortium {
     type Error = Error;
 
     #[inline]
@@ -71,15 +78,17 @@ where
         A: MapSync<Agreement<SM, u128>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
-        SM: Message<Id = str, AuthorId = Self::Id, Payload = str>,
-        SA: Action<Id = str, ActorId = Self::Id, Message = SM, Timestamp = u128>,
+        SM: Message<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
+        SA: Action<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u128>,
     {
         // When no time is active yet, the consortium agent will initialize the system by bumping
         // it to `1` and making the initial agreement active.
         let current_times = view.times.current().map_err(|err| Error::TimesCurrent { err: Box::new(err) })?;
         if !current_times.contains(&1) {
             // Add the agreement
-            todo!();
+            let agree = Agreement { message: SM::new((String::new(), 1), self.id().into(), self.agreement.into()), at: 1 };
+            view.agreed.add(agree).map_err(|err| Error::AgreementsAdd { id: "1".into(), author_id: self.id().into(), err: Box::new(err) })?;
+            debug!(target: "std::collections::HashMap<justact::agreement::Agreement<justact_prototype::wire::Message, u128>>", "Published new agreement {:?}", "1");
 
             // Update the timestamp
             view.times.add_current(1).map_err(|err| Error::TimesAddCurrent { timestamp: 1, err: Box::new(err) })?;

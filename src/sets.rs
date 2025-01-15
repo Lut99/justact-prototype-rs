@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:26:24
 //  Last edited:
-//    14 Jan 2025, 17:11:48
+//    15 Jan 2025, 17:43:12
 //  Auto updated?
 //    Yes
 //
@@ -15,6 +15,11 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::hash::Hash;
+use std::sync::Arc;
+
+use log::debug;
+
+use crate::wire::{Action, Agreement, Message};
 
 mod justact {
     pub use ::justact::auxillary::Identifiable;
@@ -25,6 +30,20 @@ mod justact {
 }
 
 
+/***** TYPE ALIASES *****/
+/// Defines the set of enacted actions.
+pub type Actions = MapAsync<Action>;
+
+/// Defines the set of agreements.
+pub type Agreements = HashMap<(String, u32), Agreement>;
+
+/// Defines the set of stated messages.
+pub type Statements = MapAsync<Arc<Message>>;
+
+
+
+
+
 /***** LIBRARY *****/
 /// Defines a _synchronous_ set for keeping track of the (current) time.
 pub struct Times {
@@ -32,6 +51,14 @@ pub struct Times {
     current: Option<u128>,
     /// The set of all known times.
     times:   HashSet<u128>,
+}
+impl Times {
+    /// Creates a new, empty Times.
+    ///
+    /// # Returns
+    /// A completely empty Times ready to be used by agents.
+    #[inline]
+    pub fn new() -> Self { Self { current: None, times: HashSet::new() } }
 }
 impl justact::Set<u128> for Times {
     type Error = Infallible;
@@ -67,6 +94,7 @@ impl justact::TimesSync for Times {
         // Then add it as the current timestamp, but only by checking if it exists already
         let existed: bool = if let Some(current) = self.current { current == timestamp } else { false };
         self.current = Some(timestamp);
+        debug!(target: std::any::type_name::<Self>(), "Updated current time to {timestamp:?}");
         Ok(existed)
     }
 }
@@ -138,7 +166,7 @@ where
     /// The parent view.
     parent: &'s mut MapAsync<E>,
     /// The identifier of the agent we're scoping to.
-    id:     &'i str,
+    pub(crate) id: &'i str,
 }
 impl<'s, 'i, E> MapAsyncView<'s, 'i, E>
 where
@@ -184,7 +212,7 @@ where
     <E::Id as ToOwned>::Owned: Eq + Hash,
 {
     #[inline]
-    fn add(&mut self, selector: justact::Selector<str>, elem: E) -> Result<(), Self::Error>
+    fn add(&mut self, selector: justact::Selector<&str>, elem: E) -> Result<(), Self::Error>
     where
         E: justact::Identifiable,
     {
@@ -195,6 +223,8 @@ where
                     .get_mut(id)
                     .unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {id:?}"))
                     .insert(elem.id().to_owned(), elem);
+                #[cfg(feature = "log")]
+                debug!(target: std::any::type_name::<Self>(), "Published new element to agent {id:?}");
                 Ok(())
             },
             justact::Selector::All => {
@@ -202,6 +232,8 @@ where
                 for view in self.parent.views.values_mut() {
                     view.insert(id.to_owned(), elem.clone());
                 }
+                #[cfg(feature = "log")]
+                debug!(target: std::any::type_name::<Self>(), "Published new element to all agents");
                 Ok(())
             },
         }

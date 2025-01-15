@@ -4,7 +4,7 @@
 //  Created:
 //    19 Dec 2024, 12:09:23
 //  Last edited:
-//    13 Jan 2025, 17:18:27
+//    15 Jan 2025, 14:54:31
 //  Auto updated?
 //    Yes
 //
@@ -407,34 +407,34 @@ impl justact::Extractor<str, str, str> for Extractor {
                 Err(err) => return Err(SyntaxError::Slick { err }),
             };
 
-            // Search for any illegal `Fact within (Author M)` messages
-            'rule: for rule in &mut msg_prog.rules {
-                for cons in &rule.consequents {
-                    if let Atom::Tuple(atoms) = cons {
-                        if let [Atom::Variable(_), Atom::Constant(within), Atom::Tuple(nested)] = atoms.as_slice() {
-                            if let [Atom::Variable(_), Atom::Variable(_)] = nested.as_slice() {
-                                if within == &Text::from_str("within") {
-                                    // Alright, full match of the illegal rule; replace it with error as a whole
-                                    *rule = Rule {
-                                        consequents: vec![
-                                            Atom::Constant(Text::from_str("error")),
-                                            Atom::Tuple(vec![
-                                                Atom::Constant(Text::from_str("illegal")),
-                                                Atom::Constant(Text::from_str("fact")),
-                                                Atom::Constant(Text::from_str("within")),
-                                            ]),
-                                        ],
-                                        rule_body:   RuleBody { pos_antecedents: Vec::new(), neg_antecedents: Vec::new(), checks: Vec::new() },
-                                    };
-                                    continue 'rule;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // // Search for any illegal `Fact within (Author M)` messages
+            // 'rule: for rule in &mut msg_prog.rules {
+            //     for cons in &rule.consequents {
+            //         if let Atom::Tuple(atoms) = cons {
+            //             if let [Atom::Variable(_), Atom::Constant(within), Atom::Tuple(nested)] = atoms.as_slice() {
+            //                 if let [Atom::Variable(_), Atom::Variable(_)] = nested.as_slice() {
+            //                     if within == &Text::from_str("within") {
+            //                         // Alright, full match of the illegal rule; replace it with error as a whole
+            //                         *rule = Rule {
+            //                             consequents: vec![
+            //                                 Atom::Constant(Text::from_str("error")),
+            //                                 Atom::Tuple(vec![
+            //                                     Atom::Constant(Text::from_str("illegal")),
+            //                                     Atom::Constant(Text::from_str("fact")),
+            //                                     Atom::Constant(Text::from_str("within")),
+            //                                 ]),
+            //                             ],
+            //                             rule_body:   RuleBody { pos_antecedents: Vec::new(), neg_antecedents: Vec::new(), checks: Vec::new() },
+            //                         };
+            //                         continue 'rule;
+            //                     }
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
 
-            // Now generate additional within facts
+            // Generate additional `within`-facts
             let mut within: Vec<Rule> = Vec::with_capacity(msg_prog.rules.len());
             for rule in &msg_prog.rules {
                 for cons in &rule.consequents {
@@ -513,6 +513,15 @@ mod tests {
     }
     impl justact::Message for Message {
         type Payload = str;
+
+        #[inline]
+        fn new(id: <Self::Id as ToOwned>::Owned, author_id: <Self::AuthorId as ToOwned>::Owned, payload: <Self::Payload as ToOwned>::Owned) -> Self
+        where
+            Self: Sized,
+        {
+            Self { id: id.to_owned(), author_id: author_id.to_owned(), payload: payload.to_owned() }
+        }
+
         #[inline]
         fn payload(&self) -> &Self::Payload { &self.payload }
     }

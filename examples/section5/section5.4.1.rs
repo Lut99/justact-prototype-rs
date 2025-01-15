@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:49:57
 //  Last edited:
-//    14 Jan 2025, 16:50:10
+//    15 Jan 2025, 17:53:04
 //  Auto updated?
 //    Yes
 //
@@ -14,7 +14,68 @@
 //
 
 mod agents;
+mod trace;
+
+use agents::{Agent, Amdex, Consortium};
+use clap::Parser;
+use error_trace::trace;
+use humanlog::{DebugMode, HumanLogger};
+use justact::runtime::Runtime as _;
+use justact_prototype::runtime::Runtime;
+use log::{error, info};
+
+
+/***** ARGUMENTS *****/
+/// The binary's CLI arguments.
+#[derive(Parser)]
+struct Arguments {
+    /// If given, enables additional INFO- and DEBUG-level statements.
+    #[clap(long, global = true)]
+    debug: bool,
+    /// If given, enables additional TRACE-level statements. Implies `--debug`.
+    #[clap(long, global = true)]
+    trace: bool,
+}
+
+
+
 
 
 /***** ENTRYPOINT *****/
-fn main() {}
+fn main() {
+    // Parse args
+    let args = Arguments::parse();
+
+    // Setup the logger
+    if let Err(err) = HumanLogger::terminal(if args.trace {
+        DebugMode::Full
+    } else if args.debug {
+        DebugMode::Debug
+    } else {
+        DebugMode::HumanFriendly
+    })
+    .init()
+    {
+        eprintln!("WARNING: Failed to setup logger: {err} (no logging this session)");
+    }
+    info!("{} - v{}", env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"));
+
+    // Setup the trace callback
+    justact_prototype::io::register_trace_handler(trace::StdoutTraceHandler);
+
+    // Create the agents
+    let agents: [Agent; 1] = [Amdex.into()];
+    let sync = Consortium::new(include_str!("slick/agreement.slick"));
+
+    // Run the runtime!
+    let mut runtime = Runtime::new();
+    if let Err(err) = runtime.run::<Agent>(agents, sync) {
+        error!("{}", trace!(("Failed to run runtime"), err));
+        std::process::exit(1);
+    }
+
+    // Done!
+    println!();
+    println!("Done");
+    println!();
+}
