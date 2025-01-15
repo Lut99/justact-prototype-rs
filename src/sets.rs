@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:26:24
 //  Last edited:
-//    15 Jan 2025, 17:43:12
+//    15 Jan 2025, 18:02:44
 //  Auto updated?
 //    Yes
 //
@@ -16,8 +16,6 @@ use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::hash::Hash;
 use std::sync::Arc;
-
-use log::debug;
 
 use crate::wire::{Action, Agreement, Message};
 
@@ -94,7 +92,6 @@ impl justact::TimesSync for Times {
         // Then add it as the current timestamp, but only by checking if it exists already
         let existed: bool = if let Some(current) = self.current { current == timestamp } else { false };
         self.current = Some(timestamp);
-        debug!(target: std::any::type_name::<Self>(), "Updated current time to {timestamp:?}");
         Ok(existed)
     }
 }
@@ -223,8 +220,6 @@ where
                     .get_mut(id)
                     .unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {id:?}"))
                     .insert(elem.id().to_owned(), elem);
-                #[cfg(feature = "log")]
-                debug!(target: std::any::type_name::<Self>(), "Published new element to agent {id:?}");
                 Ok(())
             },
             justact::Selector::All => {
@@ -232,8 +227,6 @@ where
                 for view in self.parent.views.values_mut() {
                     view.insert(id.to_owned(), elem.clone());
                 }
-                #[cfg(feature = "log")]
-                debug!(target: std::any::type_name::<Self>(), "Published new element to all agents");
                 Ok(())
             },
         }

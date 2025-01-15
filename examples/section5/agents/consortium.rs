@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    15 Jan 2025, 17:54:29
+//    15 Jan 2025, 18:04:20
 //  Auto updated?
 //    Yes
 //
@@ -24,7 +24,6 @@ use justact::collections::map::{MapAsync, MapSync};
 use justact::collections::set::InfallibleSet as _;
 use justact::messages::Message;
 use justact::times::TimesSync;
-use log::debug;
 use thiserror::Error;
 
 
@@ -88,7 +87,6 @@ impl Synchronizer<(String, u32), (String, u32), str, u128> for Consortium {
             // Add the agreement
             let agree = Agreement { message: SM::new((String::new(), 1), self.id().into(), self.agreement.into()), at: 1 };
             view.agreed.add(agree).map_err(|err| Error::AgreementsAdd { id: "1".into(), author_id: self.id().into(), err: Box::new(err) })?;
-            debug!(target: "std::collections::HashMap<justact::agreement::Agreement<justact_prototype::wire::Message, u128>>", "Published new agreement {:?}", "1");
 
             // Update the timestamp
             view.times.add_current(1).map_err(|err| Error::TimesAddCurrent { timestamp: 1, err: Box::new(err) })?;
