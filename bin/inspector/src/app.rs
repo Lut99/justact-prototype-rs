@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    16 Jan 2025, 16:51:46
+//    16 Jan 2025, 17:30:42
 //  Auto updated?
 //    Yes
 //
@@ -24,8 +24,9 @@ use log::{debug, error};
 use parking_lot::{Mutex, MutexGuard};
 use ratatui::Frame;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Style, Stylize as _};
+use ratatui::layout::{Constraint, Direction, Flex, Layout, Rect};
+use ratatui::style::{Color, Style, Stylize as _};
+use ratatui::text::{Span, Text};
 use ratatui::widgets::{Block, List, ListState, Paragraph};
 use thiserror::Error;
 use tokio::io::AsyncRead;
@@ -60,6 +61,49 @@ pub enum Error {
 
 
 
+/***** HELPER FUNCTIONS *****/
+/// Centers an area for something.
+///
+/// # Arguments
+/// - `horizontal`: Some [`Constraint`] for the horizontal space.
+/// - `vertical`: Some [`Constraint`] for the vertical space.
+/// - `area`: Some [`Rect`] that describes the full space to center in.
+///
+/// # Returns
+/// A [`Rect`] that can make an element center.
+fn center(horizontal: Constraint, vertical: Constraint, area: Rect) -> Rect {
+    let [area] = Layout::horizontal([horizontal]).flex(Flex::Center).areas(area);
+    let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
+    area
+}
+
+/// Centers an area for some text.
+///
+/// # Arguments
+/// - `text`: Some [`Text`] to center.
+/// - `area`: Some [`Rect`] that describes the full space to center in.
+///
+/// # Returns
+/// A [`Rect`] that can make an element center.
+#[inline]
+fn center_text(text: &Text, area: Rect) -> Rect { center(Constraint::Length(text.width() as u16), Constraint::Length(1), area) }
+
+/// Renders some text centered in the given area.
+///
+/// # Arguments
+/// - `frame`: The [`Frame`] to render in.
+/// - `text`: Some [`Text`] to render.
+/// - `area`: Some [`Rect`] that we render in.
+#[inline]
+fn render_centered_text(frame: &mut Frame, text: Text, area: Rect) {
+    let area = center_text(&text, area);
+    frame.render_widget(text, area);
+}
+
+
+
+
+
 /***** HELPERS *****/
 /// Defines the UI windows to draw.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -82,6 +126,8 @@ struct State {
     traces: Arc<Mutex<Vec<Trace<'static>>>>,
     /// The currently selected trace.
     traces_state: ListState,
+    /// The currently opened trace.
+    traces_opened: Option<usize>,
 }
 impl State {
     /// Constructor for the State that initializes it to default.
@@ -93,7 +139,7 @@ impl State {
     /// # Returns
     /// A new State reading for state'ing.
     fn new(errors: Arc<Mutex<VecDeque<Error>>>, traces: Arc<Mutex<Vec<Trace<'static>>>>) -> Self {
-        Self { window: Window::Main, errors, traces, traces_state: ListState::default() }
+        Self { window: Window::Main, errors, traces, traces_state: ListState::default(), traces_opened: None }
     }
 
     /// Returns a [`StateGuard`] which has locks to the internal queue of errors and buffer of
@@ -103,7 +149,13 @@ impl State {
     /// A [`StateGuard`] which can be accessed.
     #[inline]
     fn lock(&mut self) -> StateGuard {
-        StateGuard { window: &mut self.window, errors: self.errors.lock(), traces: self.traces.lock(), traces_state: &mut self.traces_state }
+        StateGuard {
+            window: &mut self.window,
+            errors: self.errors.lock(),
+            traces: self.traces.lock(),
+            traces_state: &mut self.traces_state,
+            traces_opened: &mut self.traces_opened,
+        }
     }
 }
 
@@ -117,6 +169,8 @@ struct StateGuard<'s> {
     traces: MutexGuard<'s, Vec<Trace<'static>>>,
     /// The currently selected trace.
     traces_state: &'s mut ListState,
+    /// The currently opened trace.
+    traces_opened: &'s mut Option<usize>,
 }
 
 
@@ -221,6 +275,169 @@ impl App {
     }
 }
 
+// Rendering
+impl<'s> StateGuard<'s> {
+    /// Renders the application's current window.
+    ///
+    /// # Arguments
+    /// - `frame`: Some [`Frame`] to render to.
+    fn render(&mut self, frame: &mut Frame) {
+        // Delegate to the appropriate window.
+        match self.window {
+            Window::Main => self.render_main(frame),
+        }
+    }
+
+    /// Renders the application's main window.
+    fn render_main(&mut self, frame: &mut Frame) {
+        let left_style = if self.traces_opened.is_some() { Style::new().dark_gray() } else { Style::new().white() };
+        let vrects = Layout::vertical([Constraint::Length(3), Constraint::Fill(1), Constraint::Length(1)]).split(frame.area());
+
+        // Title bar
+        frame.render_widget(
+            Paragraph::new(format!("JustAct Prototype Trace Inspector - v{}", env!("CARGO_PKG_VERSION")))
+                .style(Style::new().bold())
+                .block(Block::bordered()),
+            vrects[0],
+        );
+
+
+
+        // Traces (left plane)
+        let body_rects =
+            Layout::horizontal(if self.traces_opened.is_some() { [Constraint::Fill(1); 2].as_slice() } else { [Constraint::Fill(1); 1].as_slice() })
+                .split(vrects[1]);
+        let titles = self.traces.iter().map(|t| match t {
+            Trace::AddAgreement { agree } => {
+                let mut text = Text::from("Published agreement ").style(left_style);
+                text.push_span(Span::from(format!("Published agreement \"{} {}\"", agree.message.id.0, agree.message.id.1)).green());
+                text
+            },
+            Trace::AdvanceTime { timestamp } => {
+                let mut text = Text::from("Advanced to time ").style(left_style);
+                text.push_span(Span::from(format!("{timestamp}")).cyan());
+                text
+            },
+            Trace::EnactAction { who, to: _, action } => {
+                let mut text = Text::from("Agent ").style(left_style);
+                text.push_span(Span::from(format!("{who:?}")).bold());
+                text.push_span(" enacted action ");
+                text.push_span(Span::from(format!("\"{} {}\"", action.id.0, action.id.1)).yellow());
+                text
+            },
+            Trace::StateMessage { who, to: _, msg } => {
+                let mut text = Text::from("Agent ").style(left_style);
+                text.push_span(Span::from(format!("{who:?}")).bold());
+                text.push_span(" stated message ");
+                text.push_span(Span::from(format!("\"{} {}\"", msg.id.0, msg.id.1)).red());
+                text
+            },
+        });
+        frame.render_stateful_widget(
+            List::new(titles)
+                .block(Block::bordered().title("Trace").style(left_style))
+                .highlight_style(Style::new().fg(Color::Black).bg(if self.traces_opened.is_some() { Color::DarkGray } else { Color::White })),
+            body_rects[0],
+            self.traces_state,
+        );
+
+
+
+        // Opened trace (right plane)
+        if let Some(i) = self.traces_opened {
+            frame.render_widget(Paragraph::new("howdy").block(Block::bordered().title(format!("Trace {}", *i + 1))), body_rects[1]);
+        }
+
+
+
+        // Footer
+        if self.traces_opened.is_some() {
+            let hrects = Layout::horizontal([Constraint::Fill(1); 2].as_slice()).split(vrects[2]);
+
+            render_centered_text(
+                frame,
+                {
+                    let mut text = Text::from("Press ");
+                    text.push_span(Span::from("Q").bold());
+                    text.push_span(" to quit");
+                    text
+                },
+                hrects[0],
+            );
+            render_centered_text(
+                frame,
+                {
+                    let mut text = Text::from("Press ");
+                    text.push_span(Span::from("Esc").bold());
+                    text.push_span(" to return to all traces");
+                    text
+                },
+                hrects[1],
+            );
+        } else {
+            let hrects = Layout::horizontal(if self.traces_state.selected().is_some() {
+                [Constraint::Fill(1); 4].as_slice()
+            } else {
+                [Constraint::Fill(1); 2].as_slice()
+            })
+            .split(vrects[2]);
+
+            render_centered_text(
+                frame,
+                {
+                    let mut text = Text::from("Press ");
+                    if self.traces_state.selected().is_some() {
+                        text.push_span(Span::from("Q").bold());
+                    } else {
+                        text.push_span(Span::from("Q").bold());
+                        text.push_span("/");
+                        text.push_span(Span::from("Esc").bold());
+                    }
+                    text.push_span(" to quit");
+                    text
+                },
+                hrects[0],
+            );
+            if self.traces_state.selected().is_some() {
+                render_centered_text(
+                    frame,
+                    {
+                        let mut text = Text::from("Press ");
+                        text.push_span(Span::from("Esc").bold());
+                        text.push_span(" to unselect");
+                        text
+                    },
+                    hrects[1],
+                );
+            }
+            render_centered_text(
+                frame,
+                {
+                    let mut text = Text::from("Press ");
+                    text.push_span(Span::from("↑").bold());
+                    text.push_span("/");
+                    text.push_span(Span::from("↓").bold());
+                    text.push_span(" to select traces");
+                    text
+                },
+                hrects[if self.traces_state.selected().is_some() { 2 } else { 1 }],
+            );
+            if self.traces_state.selected().is_some() {
+                render_centered_text(
+                    frame,
+                    {
+                        let mut text = Text::from("Press ");
+                        text.push_span(Span::from("Enter").bold());
+                        text.push_span(" to view a trace");
+                        text
+                    },
+                    hrects[3],
+                );
+            }
+        }
+    }
+}
+
 // Events
 impl<'s> StateGuard<'s> {
     /// Handles a event based on the current window.
@@ -254,7 +471,15 @@ impl<'s> StateGuard<'s> {
     /// This function may error if we failed to handle them properly.
     fn handle_event_main(&mut self, event: Event) -> Result<ControlFlow<()>, Error> {
         match event {
-            // (A)rrows
+            // List management (Enter, Up, Down, Esc)
+            Event::Key(KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+                debug!(target: "Main", "Received key event ENTER");
+                if self.traces_state.selected().is_some() {
+                    // Make the currently selected one, opened
+                    *self.traces_opened = self.traces_state.selected();
+                }
+                Ok(ControlFlow::Continue(()))
+            },
             Event::Key(KeyEvent { code: KeyCode::Up, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
                 debug!(target: "Main", "Received key event UP");
                 if !self.traces.is_empty() {
@@ -277,6 +502,21 @@ impl<'s> StateGuard<'s> {
                 }
                 Ok(ControlFlow::Continue(()))
             },
+            Event::Key(KeyEvent { code: KeyCode::Esc, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+                debug!(target: "Main", "Received key event ESC");
+                if self.traces_opened.is_some() {
+                    *self.traces_opened = None;
+                    Ok(ControlFlow::Continue(()))
+                } else {
+                    if self.traces_state.selected().is_some() {
+                        self.traces_state.select(None);
+                        Ok(ControlFlow::Continue(()))
+                    } else {
+                        debug!(target: "Main", "Quitting...");
+                        Ok(ControlFlow::Break(()))
+                    }
+                }
+            },
 
             // (Q)uit
             Event::Key(KeyEvent { code: KeyCode::Char('q'), modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
@@ -287,46 +527,6 @@ impl<'s> StateGuard<'s> {
             // Other events
             _ => Ok(ControlFlow::Continue(())),
         }
-    }
-}
-
-// Rendering
-impl<'s> StateGuard<'s> {
-    /// Renders the application's current window.
-    ///
-    /// # Arguments
-    /// - `frame`: Some [`Frame`] to render to.
-    fn render(&mut self, frame: &mut Frame) {
-        // Delegate to the appropriate window.
-        match self.window {
-            Window::Main => self.render_main(frame),
-        }
-    }
-
-    /// Renders the application's main window.
-    fn render_main(&mut self, frame: &mut Frame) {
-        let rects = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(3), Constraint::Fill(1)]).split(frame.area());
-
-        // Title bar
-        frame.render_widget(
-            Paragraph::new(format!("JustAct Prototype Trace Inspector - v{}", env!("CARGO_PKG_VERSION")))
-                .style(Style::new().bold())
-                .block(Block::bordered()),
-            rects[0],
-        );
-
-        // Traces
-        let titles = self.traces.iter().map(|t| match t {
-            Trace::AddAgreement { agree } => format!("Published agreement \"{} {}\"", agree.message.id.0, agree.message.id.1),
-            Trace::AdvanceTime { timestamp } => format!("Advanced to time {timestamp}"),
-            Trace::EnactAction { who, to: _, action } => format!("Agent {who:?} enacted action \"{} {}\"", action.id.0, action.id.1),
-            Trace::StateMessage { who, to: _, msg } => format!("Agent {who:?} stated message \"{} {}\"", msg.id.0, msg.id.1),
-        });
-        frame.render_stateful_widget(
-            List::new(titles).block(Block::bordered().title("Trace")).highlight_style(Style::new().bold()),
-            rects[1],
-            self.traces_state,
-        );
     }
 }
 
