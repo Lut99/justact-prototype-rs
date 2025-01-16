@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    16 Jan 2025, 16:45:38
+//    16 Jan 2025, 16:51:46
 //  Auto updated?
 //    Yes
 //
@@ -182,8 +182,8 @@ impl App {
         loop {
             // Render the new UI state (immediate mode and all that)
             {
-                debug!("Rendering terminal UI");
-                let state: StateGuard = self.state.lock();
+                log::trace!("Rendering terminal UI");
+                let mut state: StateGuard = self.state.lock();
                 if let Err(err) = term.draw(|frame| state.render(frame)) {
                     ratatui::restore();
                     return Err(Error::Render { err });
@@ -235,6 +235,7 @@ impl<'s> StateGuard<'s> {
     /// # Errors
     /// This function may error if we failed to handle them properly.
     fn handle_event(&mut self, event: Event) -> Result<ControlFlow<()>, Error> {
+        log::trace!("Handling event {event:?} in {:?}", self.window);
         match &self.window {
             Window::Main => self.handle_event_main(event),
         }
@@ -255,7 +256,7 @@ impl<'s> StateGuard<'s> {
         match event {
             // (A)rrows
             Event::Key(KeyEvent { code: KeyCode::Up, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
-                debug!("Selecting trace UP");
+                debug!(target: "Main", "Received key event UP");
                 if !self.traces.is_empty() {
                     match self.traces_state.selected() {
                         Some(i) if i == 0 => self.traces_state.select(None),
@@ -266,7 +267,7 @@ impl<'s> StateGuard<'s> {
                 Ok(ControlFlow::Continue(()))
             },
             Event::Key(KeyEvent { code: KeyCode::Down, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
-                debug!("Selecting trace DOWN");
+                debug!(target: "Main", "Received key event DOWN");
                 if !self.traces.is_empty() {
                     match self.traces_state.selected() {
                         Some(i) if i >= self.traces.len() - 1 => self.traces_state.select(None),
@@ -279,7 +280,7 @@ impl<'s> StateGuard<'s> {
 
             // (Q)uit
             Event::Key(KeyEvent { code: KeyCode::Char('q'), modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
-                debug!("Quitting...");
+                debug!(target: "Main", "Quitting...");
                 Ok(ControlFlow::Break(()))
             },
 
@@ -295,7 +296,7 @@ impl<'s> StateGuard<'s> {
     ///
     /// # Arguments
     /// - `frame`: Some [`Frame`] to render to.
-    fn render(&self, frame: &mut Frame) {
+    fn render(&mut self, frame: &mut Frame) {
         // Delegate to the appropriate window.
         match self.window {
             Window::Main => self.render_main(frame),
@@ -303,7 +304,7 @@ impl<'s> StateGuard<'s> {
     }
 
     /// Renders the application's main window.
-    fn render_main(&self, frame: &mut Frame) {
+    fn render_main(&mut self, frame: &mut Frame) {
         let rects = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(3), Constraint::Fill(1)]).split(frame.area());
 
         // Title bar
@@ -321,7 +322,11 @@ impl<'s> StateGuard<'s> {
             Trace::EnactAction { who, to: _, action } => format!("Agent {who:?} enacted action \"{} {}\"", action.id.0, action.id.1),
             Trace::StateMessage { who, to: _, msg } => format!("Agent {who:?} stated message \"{} {}\"", msg.id.0, msg.id.1),
         });
-        frame.render_widget(List::new(titles).block(Block::bordered().title("Trace")), rects[1]);
+        frame.render_stateful_widget(
+            List::new(titles).block(Block::bordered().title("Trace")).highlight_style(Style::new().bold()),
+            rects[1],
+            self.traces_state,
+        );
     }
 }
 
