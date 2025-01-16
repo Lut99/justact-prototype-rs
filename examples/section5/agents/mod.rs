@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:50:19
 //  Last edited:
-//    15 Jan 2025, 15:38:29
+//    16 Jan 2025, 12:14:55
 //  Auto updated?
 //    Yes
 //
@@ -62,18 +62,18 @@ impl justact::Identifiable for Agent {
         }
     }
 }
-impl justact::Agent<(String, u32), (String, u32), str, u128> for Agent {
+impl justact::Agent<(String, u32), (String, u32), str, u64> for Agent {
     type Error = Error;
 
     #[inline]
     fn poll<T, A, S, E, SM, SA>(&mut self, view: justact::View<T, A, S, E>) -> Result<Poll<()>, Self::Error>
     where
-        T: justact::Times<Timestamp = u128>,
-        A: justact::Map<justact::Agreement<SM, u128>>,
+        T: justact::Times<Timestamp = u64>,
+        A: justact::Map<justact::Agreement<SM, u64>>,
         S: justact::MapAsync<Self::Id, SM>,
         E: justact::MapAsync<Self::Id, SA>,
         SM: justact::Message<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: justact::Action<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u128>,
+        SA: justact::Action<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         match self {
             Self::Amdex(a) => a.poll(view).map_err(Error::Amdex),

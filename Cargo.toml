@@ -3,7 +3,8 @@ name = "justact-prototype"
 version = "0.1.0"
 edition = "2021"
 authors = ["Tim Müller"]
-repository = "https://github.com/Lut99/justact-prototype-rs"
+repository.workspace = true
+license.workspace = true
 description = "Provides an implementation of a simple demo environment that simulates agents without threads or any of that fancy jazz."
 
 
@@ -46,3 +47,15 @@ lang-macros = ["datalog/macros"]
 
 log = ["dep:log"]
 serde = ["dep:serde"]
+
+
+
+[workspace]
+resolver = "2"
+members = [
+    "bin/inspector"
+]
+
+[workspace.package]
+repository = "https://github.com/Lut99/justact-prototype-rs"
+license = "Apache-2.0"

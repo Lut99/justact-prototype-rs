@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:57:55
 //  Last edited:
-//    15 Jan 2025, 17:55:27
+//    16 Jan 2025, 12:15:13
 //  Auto updated?
 //    Yes
 //
@@ -78,7 +78,7 @@ pub enum Trace<'a> {
     /// Traces the addition of a new agreement.
     AddAgreement { agree: Agreement },
     /// Traces the advancement of the current time.
-    AdvanceTime { timestamp: u128 },
+    AdvanceTime { timestamp: u64 },
     /// Traces the enacting of an action.
     EnactAction { who: Cow<'a, str>, to: justact::Selector<Cow<'a, str>>, action: Action },
     /// States a new message.

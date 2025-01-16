@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:11:30
 //  Last edited:
-//    15 Jan 2025, 16:30:42
+//    16 Jan 2025, 12:16:40
 //  Auto updated?
 //    Yes
 //
@@ -25,7 +25,7 @@ mod justact {
 
 /***** TYPE ALIASES *****/
 /// Fixes what it means to be an agreement.
-pub type Agreement = justact::Agreement<Arc<Message>, u128>;
+pub type Agreement = justact::Agreement<Arc<Message>, u64>;
 
 
 
@@ -40,7 +40,7 @@ pub struct Action {
     pub id: (String, u32),
 
     /// The payload of the action.
-    pub basis: justact::Agreement<Arc<Message>, u128>,
+    pub basis: Agreement,
     /// The full justification.
     pub justification: justact::MessageSet<Arc<Message>>,
 }
@@ -84,7 +84,7 @@ impl justact::Identifiable for Action {
     fn id(&self) -> &Self::Id { &self.id }
 }
 impl justact::Timed for Action {
-    type Timestamp = u128;
+    type Timestamp = u64;
 
     #[inline]
     fn at(&self) -> &Self::Timestamp { &self.basis.at }

@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:05:42
 //  Last edited:
-//    15 Jan 2025, 16:21:14
+//    16 Jan 2025, 12:15:05
 //  Auto updated?
 //    Yes
 //
@@ -88,7 +88,7 @@ impl justact::Runtime for Runtime {
     type AgentId = str;
     type SynchronizerId = str;
     type Payload = str;
-    type Timestamp = u128;
+    type Timestamp = u64;
     type Error = Error;
 
 

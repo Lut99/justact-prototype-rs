@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    15 Jan 2025, 18:04:20
+//    16 Jan 2025, 12:14:34
 //  Auto updated?
 //    Yes
 //
@@ -67,18 +67,18 @@ impl Identifiable for Consortium {
     #[inline]
     fn id(&self) -> &Self::Id { "consortium" }
 }
-impl Synchronizer<(String, u32), (String, u32), str, u128> for Consortium {
+impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
     type Error = Error;
 
     #[inline]
     fn poll<T, A, S, E, SM, SA>(&mut self, mut view: View<T, A, S, E>) -> Result<ControlFlow<()>, Self::Error>
     where
-        T: TimesSync<Timestamp = u128>,
-        A: MapSync<Agreement<SM, u128>>,
+        T: TimesSync<Timestamp = u64>,
+        A: MapSync<Agreement<SM, u64>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
         SM: Message<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: Action<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u128>,
+        SA: Action<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // When no time is active yet, the consortium agent will initialize the system by bumping
         // it to `1` and making the initial agreement active.
@@ -93,6 +93,7 @@ impl Synchronizer<(String, u32), (String, u32), str, u128> for Consortium {
         }
 
         // Done, other agents can have a go
-        Ok(ControlFlow::Continue(()))
+        // Ok(ControlFlow::Continue(()))
+        Ok(ControlFlow::Break(()))
     }
 }

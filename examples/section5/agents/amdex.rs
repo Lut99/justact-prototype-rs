@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:22:02
 //  Last edited:
-//    15 Jan 2025, 17:54:55
+//    16 Jan 2025, 12:14:47
 //  Auto updated?
 //    Yes
 //
@@ -57,18 +57,18 @@ impl Identifiable for Amdex {
     #[inline]
     fn id(&self) -> &Self::Id { "amdex" }
 }
-impl Agent<(String, u32), (String, u32), str, u128> for Amdex {
+impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
     type Error = Error;
 
     #[inline]
     fn poll<T, A, S, E, SM, SA>(&mut self, mut view: View<T, A, S, E>) -> Result<Poll<()>, Self::Error>
     where
-        T: Times<Timestamp = u128>,
-        A: Map<Agreement<SM, u128>>,
+        T: Times<Timestamp = u64>,
+        A: Map<Agreement<SM, u64>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
         SM: Message<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: Action<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u128>,
+        SA: Action<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // The AMdEX agent can publish immediately, it doesn't yet need the agreement for just
         // stating.
@@ -78,7 +78,7 @@ impl Agent<(String, u32), (String, u32), str, u128> for Amdex {
             Ok(false) => {
                 // Push the message
                 view.stated
-                    .add(Selector::All, SM::new((String::new(), id.1), id.0.clone(), r#""#.into()))
+                    .add(Selector::All, SM::new((String::new(), id.1), id.0.clone(), include_str!("../slick/amdex_1.slick").into()))
                     .map_err(|err| Error::StatementsAdd { id, err: Box::new(err) })?;
                 Ok(Poll::Ready(()))
             },

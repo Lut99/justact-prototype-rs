@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:49:57
 //  Last edited:
-//    15 Jan 2025, 17:53:04
+//    16 Jan 2025, 12:17:04
 //  Auto updated?
 //    Yes
 //
@@ -75,7 +75,4 @@ fn main() {
     }
 
     // Done!
-    println!();
-    println!("Done");
-    println!();
 }
