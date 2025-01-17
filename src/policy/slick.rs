@@ -4,7 +4,7 @@
 //  Created:
 //    19 Dec 2024, 12:09:23
 //  Last edited:
-//    15 Jan 2025, 14:54:31
+//    17 Jan 2025, 16:54:21
 //  Auto updated?
 //    Yes
 //
@@ -17,6 +17,7 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::ops::{Deref, DerefMut};
 
+use nom::error::VerboseError;
 use slick::infer::Config;
 use slick::text::Text;
 use slick::{Atom, GroundAtom, Program, Rule, RuleBody, parse};
@@ -27,18 +28,24 @@ mod justact {
     pub use ::justact::messages::Message;
     pub use ::justact::policies::{Denotation, Effect, Extractor, Policy};
 }
-use error_trace::trace;
 use thiserror::Error;
 
 
 /***** ERRORS *****/
 /// Defines errors that may occur when [extracting](Extractor::extract()) policy.
 #[derive(Debug, Error)]
-pub enum SyntaxError<'m> {
-    #[error("{}", trace!(("Failed to iterate over messages in {what}"), &**err))]
-    Iter { what: &'static str, err: Box<dyn 'm + Error> },
-    #[error("{}", trace!(("Failed to parse the input as valid Slick"), err))]
-    Slick { err: nom::Err<nom::error::VerboseError<&'m str>> },
+pub enum SyntaxError {
+    #[error("Failed to iterate over messages in {what}")]
+    Iter {
+        what: &'static str,
+        #[source]
+        err:  Box<dyn Error>,
+    },
+    #[error("Failed to parse the input as valid Slick")]
+    Slick {
+        #[source]
+        err: nom::Err<nom::error::VerboseError<String>>,
+    },
 }
 
 
@@ -382,13 +389,13 @@ impl DerefMut for Policy {
 /// Represents the [`Extractor`] for Slick's [`Program`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Extractor;
-impl justact::Extractor<str, str, str> for Extractor {
+impl justact::Extractor<(String, u32), str, str> for Extractor {
     type Policy<'m> = Policy;
-    type Error<'m> = SyntaxError<'m>;
+    type Error<'m> = SyntaxError;
 
 
     #[inline]
-    fn extract<'m, M: 'm + justact::Message<Id = str, AuthorId = str, Payload = str>>(
+    fn extract<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = (String, u32), AuthorId = str, Payload = str>>(
         &self,
         msgs: &'m impl justact::Map<M>,
     ) -> Result<Self::Policy<'m>, Self::Error<'m>> {
@@ -404,7 +411,11 @@ impl justact::Extractor<str, str, str> for Extractor {
             // Parse as Slick
             let mut msg_prog: Program = match parse::program(snippet) {
                 Ok((_, prog)) => prog,
-                Err(err) => return Err(SyntaxError::Slick { err }),
+                Err(err) => {
+                    return Err(SyntaxError::Slick {
+                        err: err.map(|err| VerboseError { errors: err.errors.into_iter().map(|(src, err)| (src.to_string(), err)).collect() }),
+                    });
+                },
             };
 
             // // Search for any illegal `Fact within (Author M)` messages
@@ -438,11 +449,12 @@ impl justact::Extractor<str, str, str> for Extractor {
             let mut within: Vec<Rule> = Vec::with_capacity(msg_prog.rules.len());
             for rule in &msg_prog.rules {
                 for cons in &rule.consequents {
+                    let msg_id: &(String, u32) = msg.id();
                     within.push(Rule {
                         consequents: vec![Atom::Tuple(vec![
                             cons.clone(),
                             Atom::Constant(Text::from_str("within")),
-                            Atom::Tuple(vec![Atom::Constant(Text::from_str(msg.author_id())), Atom::Constant(Text::from_str(msg.id()))]),
+                            Atom::Tuple(vec![Atom::Constant(Text::from_str(&msg_id.0)), Atom::Constant(Text::from_str(&msg_id.1.to_string()))]),
                         ])],
                         rule_body:   RuleBody { pos_antecedents: vec![cons.clone()], neg_antecedents: Vec::new(), checks: Vec::new() },
                     });
@@ -497,30 +509,21 @@ mod tests {
 
     /// Implements a test message
     struct Message {
-        id: String,
-        author_id: String,
+        id:      (String, u32),
         payload: String,
     }
     impl justact::Authored for Message {
         type AuthorId = str;
         #[inline]
-        fn author_id(&self) -> &Self::AuthorId { &self.author_id }
+        fn author_id(&self) -> &Self::AuthorId { &self.id.0 }
     }
     impl justact::Identifiable for Message {
-        type Id = str;
+        type Id = (String, u32);
         #[inline]
         fn id(&self) -> &Self::Id { &self.id }
     }
     impl justact::Message for Message {
         type Payload = str;
-
-        #[inline]
-        fn new(id: <Self::Id as ToOwned>::Owned, author_id: <Self::AuthorId as ToOwned>::Owned, payload: <Self::Payload as ToOwned>::Owned) -> Self
-        where
-            Self: Sized,
-        {
-            Self { id: id.to_owned(), author_id: author_id.to_owned(), payload: payload.to_owned() }
-        }
 
         #[inline]
         fn payload(&self) -> &Self::Payload { &self.payload }
@@ -546,8 +549,8 @@ mod tests {
 
     #[test]
     fn test_extract_policy_single() {
-        let msg = Message { id: "a".into(), author_id: "amy".into(), payload: "foo. bar if baz A.".into() };
-        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msg).unwrap();
+        let msg = Message { id: ("amy".into(), 1), payload: "foo. bar if baz A.".into() };
+        let pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &msg).unwrap();
         assert_eq!(pol.program, Program {
             rules: vec![
                 Rule {
@@ -566,7 +569,7 @@ mod tests {
                     consequents: vec![Atom::Tuple(vec![
                         Atom::Constant(Text::from_str("foo")),
                         Atom::Constant(Text::from_str("within")),
-                        Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("a"))])
+                        Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("1"))])
                     ])],
                     rule_body:   RuleBody { pos_antecedents: vec![Atom::Constant(Text::from_str("foo"))], neg_antecedents: vec![], checks: vec![] },
                 },
@@ -574,7 +577,7 @@ mod tests {
                     consequents: vec![Atom::Tuple(vec![
                         Atom::Constant(Text::from_str("bar")),
                         Atom::Constant(Text::from_str("within")),
-                        Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("a"))])
+                        Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("1"))])
                     ])],
                     rule_body:   RuleBody { pos_antecedents: vec![Atom::Constant(Text::from_str("bar"))], neg_antecedents: vec![], checks: vec![] },
                 }
@@ -584,12 +587,12 @@ mod tests {
     #[test]
     fn test_extract_policy_multi() {
         // Construct a set of messages
-        let msg1 = Message { id: "a".into(), author_id: "amy".into(), payload: "foo.".into() };
-        let msg2 = Message { id: "b".into(), author_id: "bob".into(), payload: "bar :- baz(A).".into() };
+        let msg1 = Message { id: ("amy".into(), 1), payload: "foo.".into() };
+        let msg2 = Message { id: ("bob".into(), 1), payload: "bar :- baz(A).".into() };
         let msgs = justact::MessageSet::from([msg1, msg2]);
 
         // Extract the policy from it
-        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msgs).unwrap();
+        let pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &msgs).unwrap();
         // NOTE: MessageSet collects messages unordered, so the rules may be in any order
         assert!(
             pol.program
@@ -603,7 +606,7 @@ mod tests {
                             consequents: vec![Atom::Tuple(vec![
                                 Atom::Constant(Text::from_str("foo")),
                                 Atom::Constant(Text::from_str("within")),
-                                Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("a"))])
+                                Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("1"))])
                             ])],
                             rule_body:   RuleBody {
                                 pos_antecedents: vec![Atom::Constant(Text::from_str("foo"))],
@@ -623,7 +626,7 @@ mod tests {
                             consequents: vec![Atom::Tuple(vec![
                                 Atom::Constant(Text::from_str("bar")),
                                 Atom::Constant(Text::from_str("within")),
-                                Atom::Tuple(vec![Atom::Constant(Text::from_str("bob")), Atom::Constant(Text::from_str("b"))])
+                                Atom::Tuple(vec![Atom::Constant(Text::from_str("bob")), Atom::Constant(Text::from_str("1"))])
                             ])],
                             rule_body:   RuleBody {
                                 pos_antecedents: vec![Atom::Constant(Text::from_str("bar"))],
@@ -651,7 +654,7 @@ mod tests {
                                 consequents: vec![Atom::Tuple(vec![
                                     Atom::Constant(Text::from_str("bar")),
                                     Atom::Constant(Text::from_str("within")),
-                                    Atom::Tuple(vec![Atom::Constant(Text::from_str("bob")), Atom::Constant(Text::from_str("b"))])
+                                    Atom::Tuple(vec![Atom::Constant(Text::from_str("bob")), Atom::Constant(Text::from_str("1"))])
                                 ])],
                                 rule_body:   RuleBody {
                                     pos_antecedents: vec![Atom::Constant(Text::from_str("bar"))],
@@ -667,7 +670,7 @@ mod tests {
                                 consequents: vec![Atom::Tuple(vec![
                                     Atom::Constant(Text::from_str("foo")),
                                     Atom::Constant(Text::from_str("within")),
-                                    Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("a"))])
+                                    Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("1"))])
                                 ])],
                                 rule_body:   RuleBody {
                                     pos_antecedents: vec![Atom::Constant(Text::from_str("foo"))],
@@ -820,9 +823,9 @@ mod tests {
     #[test]
     fn test_reflection() {
         // First, see if the derivation works.
-        let msg1 = Message { id: "a".into(), author_id: "amy".into(), payload: "foo. (bar foo) if foo. baz X if bar X.".into() };
-        let msg2 = Message { id: "b".into(), author_id: "bob".into(), payload: "qux X if baz X.".into() };
-        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &justact::MessageSet::from([msg1, msg2])).unwrap();
+        let msg1 = Message { id: ("amy".into(), 1), payload: "foo. (bar foo) if foo. baz X if bar X.".into() };
+        let msg2 = Message { id: ("bob".into(), 1), payload: "qux X if baz X.".into() };
+        let pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &justact::MessageSet::from([msg1, msg2])).unwrap();
         let den = <Policy as justact::Policy>::truths(&pol);
         assert_eq!(den, Denotation {
             truths:  [

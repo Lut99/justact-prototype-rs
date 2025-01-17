@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    16 Jan 2025, 12:14:34
+//    17 Jan 2025, 17:41:00
 //  Auto updated?
 //    Yes
 //
@@ -14,32 +14,43 @@
 //
 
 use std::error;
+use std::fmt::{Display, Formatter, Result as FResult};
 use std::ops::ControlFlow;
 
-use justact::actions::Action;
+use justact::actions::ConstructableAction;
 use justact::actors::{Synchronizer, View};
 use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
 use justact::collections::map::{MapAsync, MapSync};
 use justact::collections::set::InfallibleSet as _;
-use justact::messages::Message;
+use justact::messages::ConstructableMessage;
 use justact::times::TimesSync;
-use thiserror::Error;
 
 
 /***** ERRORS *****/
-/// The errors published by the Consortium.
-#[derive(Debug, Error)]
-pub enum Error {
-    /// Failed to add to the current set of agreements.
-    #[error("Failed to add agreements {author_id:?} {id:?}")]
-    AgreementsAdd { id: String, author_id: String, err: Box<dyn error::Error> },
-    /// Failed to add to the current set of times.
-    #[error("Failed to add current time {timestamp:?}")]
-    TimesAddCurrent { timestamp: u128, err: Box<dyn error::Error> },
-    /// Failed to get the current set of times.
-    #[error("Failed to get the set of current times")]
-    TimesCurrent { err: Box<dyn error::Error> },
+#[derive(Debug)]
+pub struct Error {
+    /// The actual error produced.
+    err: Box<dyn error::Error>,
+}
+impl Error {
+    /// Constructor for the Error that we need because `From<E>` overlaps with Self >:(
+    ///
+    /// # Arguments
+    /// - `err`: Some error to wrap.
+    ///
+    /// # Returns
+    /// A new Error that behaves exactly as `err` but obfuscates its type.
+    #[inline]
+    pub fn new(err: impl 'static + error::Error) -> Self { Self { err: Box::new(err) } }
+}
+impl Display for Error {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult { self.err.fmt(f) }
+}
+impl error::Error for Error {
+    #[inline]
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> { self.err.source() }
 }
 
 
@@ -77,23 +88,22 @@ impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
         A: MapSync<Agreement<SM, u64>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
-        SM: Message<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: Action<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
+        SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // When no time is active yet, the consortium agent will initialize the system by bumping
         // it to `1` and making the initial agreement active.
-        let current_times = view.times.current().map_err(|err| Error::TimesCurrent { err: Box::new(err) })?;
+        let current_times = view.times.current().map_err(Error::new)?;
         if !current_times.contains(&1) {
             // Add the agreement
             let agree = Agreement { message: SM::new((String::new(), 1), self.id().into(), self.agreement.into()), at: 1 };
-            view.agreed.add(agree).map_err(|err| Error::AgreementsAdd { id: "1".into(), author_id: self.id().into(), err: Box::new(err) })?;
+            view.agreed.add(agree).map_err(Error::new)?;
 
             // Update the timestamp
-            view.times.add_current(1).map_err(|err| Error::TimesAddCurrent { timestamp: 1, err: Box::new(err) })?;
+            view.times.add_current(1).map_err(Error::new)?;
         }
 
         // Done, other agents can have a go
-        // Ok(ControlFlow::Continue(()))
-        Ok(ControlFlow::Break(()))
+        Ok(ControlFlow::Continue(()))
     }
 }

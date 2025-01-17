@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:11:30
 //  Last edited:
-//    16 Jan 2025, 12:16:40
+//    17 Jan 2025, 15:41:27
 //  Auto updated?
 //    Yes
 //
@@ -13,13 +13,15 @@
 //!   [`Message`]s.
 //
 
+use std::convert::Infallible;
 use std::sync::Arc;
 
 mod justact {
-    pub use ::justact::actions::Action;
+    pub use ::justact::actions::{Action, ConstructableAction};
     pub use ::justact::agreements::Agreement;
     pub use ::justact::auxillary::{Actored, Authored, Identifiable, Timed};
-    pub use ::justact::messages::{Message, MessageSet};
+    pub use ::justact::collections::map::Map;
+    pub use ::justact::messages::{ConstructableMessage, Message, MessageSet};
 }
 
 
@@ -44,9 +46,7 @@ pub struct Action {
     /// The full justification.
     pub justification: justact::MessageSet<Arc<Message>>,
 }
-impl justact::Action for Action {
-    type Message = Arc<Message>;
-
+impl justact::ConstructableAction for Action {
     #[inline]
     fn new(
         id: <Self::Id as ToOwned>::Owned,
@@ -59,6 +59,9 @@ impl justact::Action for Action {
     {
         Self { id: (actor_id.to_owned(), id.to_owned().1), basis, justification }
     }
+}
+impl justact::Action for Action {
+    type Message = Arc<Message>;
 
     #[inline]
     fn basis(&self) -> &justact::Agreement<Self::Message, Self::Timestamp> { &self.basis }
@@ -111,9 +114,7 @@ impl justact::Identifiable for Message {
     #[inline]
     fn id(&self) -> &Self::Id { &self.id }
 }
-impl justact::Message for Message {
-    type Payload = str;
-
+impl justact::ConstructableMessage for Message {
     #[inline]
     fn new(id: <Self::Id as ToOwned>::Owned, author_id: <Self::AuthorId as ToOwned>::Owned, payload: <Self::Payload as ToOwned>::Owned) -> Self
     where
@@ -121,7 +122,37 @@ impl justact::Message for Message {
     {
         Self { id: (author_id.to_owned(), id.to_owned().1), payload: payload.to_owned() }
     }
+}
+impl justact::Message for Message {
+    type Payload = str;
 
     #[inline]
     fn payload(&self) -> &Self::Payload { &self.payload }
+}
+impl justact::Map<Self> for Message {
+    type Error = Infallible;
+
+    #[inline]
+    fn contains_key(&self, id: &<Self as justact::Identifiable>::Id) -> Result<bool, Self::Error>
+    where
+        Self: justact::Identifiable,
+    {
+        Ok(&self.id == id)
+    }
+
+    #[inline]
+    fn get(&self, id: &<Self as justact::Identifiable>::Id) -> Result<Option<&Self>, Self::Error>
+    where
+        Self: justact::Identifiable,
+    {
+        Ok(if &self.id == id { Some(self) } else { None })
+    }
+
+    #[inline]
+    fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s Self>, Self::Error>
+    where
+        Self: 's + justact::Identifiable,
+    {
+        Ok(Some(self).into_iter())
+    }
 }

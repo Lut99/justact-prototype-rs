@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:49:57
 //  Last edited:
-//    16 Jan 2025, 12:17:04
+//    17 Jan 2025, 17:51:42
 //  Auto updated?
 //    Yes
 //
@@ -16,7 +16,7 @@
 mod agents;
 mod trace;
 
-use agents::{Agent, Amdex, Consortium};
+use agents::{Agent, Amdex, Amy, Consortium, StAntonius};
 use clap::Parser;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
@@ -64,7 +64,7 @@ fn main() {
     justact_prototype::io::register_trace_handler(trace::StdoutTraceHandler);
 
     // Create the agents
-    let agents: [Agent; 1] = [Amdex.into()];
+    let agents: [Agent; 3] = [Amdex.into(), Amy.into(), StAntonius.into()];
     let sync = Consortium::new(include_str!("slick/agreement.slick"));
 
     // Run the runtime!

@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 11:43:30
 //  Last edited:
-//    16 Jan 2025, 16:31:31
+//    17 Jan 2025, 17:33:26
 //  Auto updated?
 //    Yes
 //
@@ -15,6 +15,7 @@
 use std::io::ErrorKind;
 
 use justact_prototype::io::Trace;
+use log::debug;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt as _, BufReader};
 
@@ -147,6 +148,7 @@ where
 
                                 // If we have parity, we have a (potential) trace!
                                 if depth == 0 {
+                                    debug!("Found raw trace: {buf:?}");
                                     match serde_json::from_str::<Trace<'static>>(&buf) {
                                         Ok(trace) => return Some(Ok(trace)),
                                         Err(err) => return Some(Err(Error::TraceDeserialize { pos: open_pos, err })),

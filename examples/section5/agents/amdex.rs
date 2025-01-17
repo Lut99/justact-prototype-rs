@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:22:02
 //  Last edited:
-//    16 Jan 2025, 12:14:47
+//    17 Jan 2025, 15:32:27
 //  Auto updated?
 //    Yes
 //
@@ -14,35 +14,43 @@
 //
 
 use std::error;
+use std::fmt::{Display, Formatter, Result as FResult};
 use std::task::Poll;
 
-use justact::actions::Action;
+use justact::actions::ConstructableAction;
 use justact::actors::{Agent, View};
 use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
 use justact::collections::Selector;
 use justact::collections::map::{Map, MapAsync};
-use justact::messages::Message;
+use justact::messages::ConstructableMessage;
 use justact::times::Times;
-use thiserror::Error;
 
 
 /***** ERRORS *****/
-/// The errors published by the Amdex agent.
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("Failed to state message \"{} {}\"", id.0, id.1)]
-    StatementsAdd {
-        id:  (String, u32),
-        #[source]
-        err: Box<dyn error::Error>,
-    },
-    #[error("Failed to check for statement \"{} {}\" existance", id.0, id.1)]
-    StatementsContainsKey {
-        id:  (String, u32),
-        #[source]
-        err: Box<dyn error::Error>,
-    },
+#[derive(Debug)]
+pub struct Error {
+    /// The actual error produced.
+    err: Box<dyn error::Error>,
+}
+impl Error {
+    /// Constructor for the Error that we need because `From<E>` overlaps with Self >:(
+    ///
+    /// # Arguments
+    /// - `err`: Some error to wrap.
+    ///
+    /// # Returns
+    /// A new Error that behaves exactly as `err` but obfuscates its type.
+    #[inline]
+    pub fn new(err: impl 'static + error::Error) -> Self { Self { err: Box::new(err) } }
+}
+impl Display for Error {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult { self.err.fmt(f) }
+}
+impl error::Error for Error {
+    #[inline]
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> { self.err.source() }
 }
 
 
@@ -67,8 +75,8 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
         A: Map<Agreement<SM, u64>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
-        SM: Message<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: Action<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
+        SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // The AMdEX agent can publish immediately, it doesn't yet need the agreement for just
         // stating.
@@ -79,10 +87,10 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
                 // Push the message
                 view.stated
                     .add(Selector::All, SM::new((String::new(), id.1), id.0.clone(), include_str!("../slick/amdex_1.slick").into()))
-                    .map_err(|err| Error::StatementsAdd { id, err: Box::new(err) })?;
+                    .map_err(Error::new)?;
                 Ok(Poll::Ready(()))
             },
-            Err(err) => Err(Error::StatementsContainsKey { id, err: Box::new(err) }),
+            Err(err) => Err(Error::new(err)),
         }
     }
 }

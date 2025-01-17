@@ -4,7 +4,7 @@
 //  Created:
 //    26 Nov 2024, 11:54:14
 //  Last edited:
-//    15 Jan 2025, 10:57:09
+//    17 Jan 2025, 16:00:30
 //  Auto updated?
 //    Yes
 //
@@ -300,7 +300,7 @@ impl justact::Extractor<str, str, str> for Extractor {
 
 
     #[inline]
-    fn extract<'m, M: 'm + justact::Message<Id = str, AuthorId = str, Payload = str>>(
+    fn extract<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = str, AuthorId = str, Payload = str>>(
         &self,
         msgs: &'m impl justact::Map<M>,
     ) -> Result<Self::Policy<'m>, Self::Error<'m>> {
@@ -426,14 +426,6 @@ mod tests {
     }
     impl justact::Message for Message {
         type Payload = str;
-
-        #[inline]
-        fn new(id: <Self::Id as ToOwned>::Owned, author_id: <Self::AuthorId as ToOwned>::Owned, payload: <Self::Payload as ToOwned>::Owned) -> Self
-        where
-            Self: Sized,
-        {
-            Self { id: id.to_owned(), author_id: author_id.to_owned(), payload: payload.to_owned() }
-        }
 
         #[inline]
         fn payload(&self) -> &Self::Payload { &self.payload }

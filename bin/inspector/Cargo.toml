@@ -21,6 +21,7 @@ tokio = { version = "1.43.0", default-features = false, features = ["fs", "io-st
 
 error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
 humanlog = { git = "https://github.com/Lut99/humanlog-rs" }
+justact = {git = "https://github.com/Lut99/justact-rs", branch = "journal" }
 
 justact-prototype = { path = "../..", features = ["serde"] }
 
