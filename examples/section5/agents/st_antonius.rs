@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 17:45:04
 //  Last edited:
-//    17 Jan 2025, 17:51:32
+//    21 Jan 2025, 09:57:13
 //  Auto updated?
 //    Yes
 //
@@ -13,7 +13,6 @@
 //!   paper \[1\].
 //
 
-use std::error;
 use std::task::Poll;
 
 use justact::actions::ConstructableAction;
@@ -24,50 +23,10 @@ use justact::collections::Selector;
 use justact::collections::map::{Map, MapAsync};
 use justact::messages::ConstructableMessage;
 use justact::times::Times;
-use thiserror::Error;
 
-
-/***** ERRORS *****/
-/// Defines errors originating in the [`Amy`] agent.
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("Failed to check if statement \"{} {}\" is stated", id.0, id.1)]
-    StatementContains {
-        id:  (String, u32),
-        #[source]
-        err: Box<dyn error::Error>,
-    },
-    #[error("Failed to state new statement \"{} {}\"", id.0, id.1)]
-    StatementState {
-        id:  (String, u32),
-        #[source]
-        err: Box<dyn error::Error>,
-    },
-}
-impl Error {
-    /// Constructor for [`Error::StatementContains`] that makes it convenient to map.
-    ///
-    /// # Arguments
-    /// - `err`: The [`error::Error`] to wrap.
-    ///
-    /// # Returns
-    /// A new [`Error::StatementContains`].
-    #[inline]
-    pub fn contains(id: (String, u32), err: impl 'static + error::Error) -> Self { Self::StatementContains { id: id.into(), err: Box::new(err) } }
-
-    /// Constructor for [`Error::StatementState`] that makes it convenient to map.
-    ///
-    /// # Arguments
-    /// - `err`: The [`error::Error`] to wrap.
-    ///
-    /// # Returns
-    /// A new [`Error::StatementState`].
-    #[inline]
-    pub fn state(id: (String, u32), err: impl 'static + error::Error) -> Self { Self::StatementState { id, err: Box::new(err) } }
-}
-
-
-
+use super::create_message;
+pub use crate::error::Error;
+use crate::error::ResultToError as _;
 
 
 /***** LIBRARY *****/
@@ -92,13 +51,10 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
         SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // The St. Antonius publishes their authorization only after Amy has published
-        let amy_id: (String, u32) = ("amy".into(), 1);
-        if view.stated.contains_key(&amy_id).map_err(|err| Error::contains(amy_id, err))? {
+        let target_id: (String, u32) = ("amy".into(), 1);
+        if view.stated.contains_key(&target_id).cast()? {
             // Publish ours
-            let id: (String, u32) = (self.id().into(), 1);
-            view.stated
-                .add(Selector::All, SM::new((String::new(), id.1), id.0.clone(), include_str!("../slick/st-antonius_1.slick").into()))
-                .map_err(|err| Error::state(id, err))?;
+            view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
             return Ok(Poll::Ready(()));
         }
 

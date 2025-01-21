@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    17 Jan 2025, 17:41:00
+//    21 Jan 2025, 09:56:21
 //  Auto updated?
 //    Yes
 //
@@ -13,8 +13,6 @@
 //!   and 5.4 of the JustAct paper \[1\].
 //
 
-use std::error;
-use std::fmt::{Display, Formatter, Result as FResult};
 use std::ops::ControlFlow;
 
 use justact::actions::ConstructableAction;
@@ -26,35 +24,9 @@ use justact::collections::set::InfallibleSet as _;
 use justact::messages::ConstructableMessage;
 use justact::times::TimesSync;
 
-
-/***** ERRORS *****/
-#[derive(Debug)]
-pub struct Error {
-    /// The actual error produced.
-    err: Box<dyn error::Error>,
-}
-impl Error {
-    /// Constructor for the Error that we need because `From<E>` overlaps with Self >:(
-    ///
-    /// # Arguments
-    /// - `err`: Some error to wrap.
-    ///
-    /// # Returns
-    /// A new Error that behaves exactly as `err` but obfuscates its type.
-    #[inline]
-    pub fn new(err: impl 'static + error::Error) -> Self { Self { err: Box::new(err) } }
-}
-impl Display for Error {
-    #[inline]
-    fn fmt(&self, f: &mut Formatter<'_>) -> FResult { self.err.fmt(f) }
-}
-impl error::Error for Error {
-    #[inline]
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> { self.err.source() }
-}
-
-
-
+use super::create_message;
+pub use crate::error::Error;
+use crate::error::ResultToError as _;
 
 
 /***** LIBRARY *****/
@@ -93,14 +65,14 @@ impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
     {
         // When no time is active yet, the consortium agent will initialize the system by bumping
         // it to `1` and making the initial agreement active.
-        let current_times = view.times.current().map_err(Error::new)?;
+        let current_times = view.times.current().cast()?;
         if !current_times.contains(&1) {
             // Add the agreement
-            let agree = Agreement { message: SM::new((String::new(), 1), self.id().into(), self.agreement.into()), at: 1 };
-            view.agreed.add(agree).map_err(Error::new)?;
+            let agree = Agreement { message: create_message(1, self.id(), self.agreement), at: 1 };
+            view.agreed.add(agree).cast()?;
 
             // Update the timestamp
-            view.times.add_current(1).map_err(Error::new)?;
+            view.times.add_current(1).cast()?;
         }
 
         // Done, other agents can have a go

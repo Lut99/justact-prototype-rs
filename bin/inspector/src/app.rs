@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    17 Jan 2025, 17:54:05
+//    21 Jan 2025, 09:21:41
 //  Auto updated?
 //    Yes
 //
@@ -198,7 +198,7 @@ impl State {
     fn lock(&mut self) -> StateGuard {
         StateGuard {
             window: &mut self.window,
-            errors: self.errors.lock(),
+            _errors: self.errors.lock(),
             focus: &mut self.focus,
             traces: self.traces.lock(),
             traces_state: &mut self.traces_state,
@@ -212,7 +212,7 @@ struct StateGuard<'s> {
     /// Which window we're currently drawing.
     window: &'s mut Window,
     /// A queue of errors to show.
-    errors: MutexGuard<'s, VecDeque<Error>>,
+    _errors: MutexGuard<'s, VecDeque<Error>>,
     /// Which part of the window is focused.
     focus: &'s mut Focus,
     /// The currently collected list of traces.
@@ -261,7 +261,7 @@ impl App {
             state: State::new(errors.clone(), traces.clone()),
             events: EventStream::new(),
             receiver,
-            handle: tokio::spawn(Self::trace_reader(traces, errors, sender, what, input)),
+            handle: tokio::spawn(Self::trace_reader(errors, traces, sender, what, input)),
         }
     }
 }
@@ -803,8 +803,8 @@ impl App {
     /// # Returns
     /// This function will only return once the given `input` closes.
     async fn trace_reader(
-        output: Arc<Mutex<Vec<Trace<'static>>>>,
         errors: Arc<Mutex<VecDeque<Error>>>,
+        output: Arc<Mutex<Vec<Trace<'static>>>>,
         sender: Sender<()>,
         what: String,
         input: impl AsyncRead + Unpin,
