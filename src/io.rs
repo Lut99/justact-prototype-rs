@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:57:55
 //  Last edited:
-//    16 Jan 2025, 12:15:13
+//    21 Jan 2025, 16:55:00
 //  Auto updated?
 //    Yes
 //
@@ -31,7 +31,7 @@ mod justact {
 
 /***** GLOBALS *****/
 /// Defines \*some\* [`TraceHandler`] that will handle trace callbacks.
-static TRACE_HANDLER: OnceLock<RwLock<Box<dyn TraceHandler>>> = OnceLock::new();
+pub(crate) static TRACE_HANDLER: OnceLock<RwLock<Box<dyn TraceHandler>>> = OnceLock::new();
 
 
 
@@ -73,8 +73,20 @@ impl<E: error::Error> error::Error for Error<E> {
 /// Defines what may be traced in a [`TraceHandler`].
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(feature = "serde", serde(tag = "kind"))]
+#[cfg_attr(all(feature = "serde", not(feature = "dataplane")), serde(untagged))]
 pub enum Trace<'a> {
+    /// Defines traces eminating from the JustAct framework.
+    JustAct(TraceJustAct<'a>),
+    /// Defines traces eminating from the Dataplane framework.
+    #[cfg(feature = "dataplane")]
+    Dataplane(TraceDataplane<'a>),
+}
+
+/// Defines what may be traced by the JustAct-part of the framework (governance).
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(tag = "kind"))]
+pub enum TraceJustAct<'a> {
     /// Traces the addition of a new agreement.
     AddAgreement { agree: Agreement },
     /// Traces the advancement of the current time.
@@ -83,6 +95,18 @@ pub enum Trace<'a> {
     EnactAction { who: Cow<'a, str>, to: justact::Selector<Cow<'a, str>>, action: Action },
     /// States a new message.
     StateMessage { who: Cow<'a, str>, to: justact::Selector<Cow<'a, str>>, msg: Arc<Message> },
+}
+
+/// Defines what may be traced by the dataplane-part of the framework (governance).
+#[derive(Clone, Debug)]
+#[cfg(feature = "dataplane")]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(tag = "kind"))]
+pub enum TraceDataplane<'a> {
+    /// Traces that somebody read from a variable.
+    Read { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, contents: Option<Cow<'a, [u8]>> },
+    /// Traces that somebody wrote to a variable.
+    Write { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, new: bool, contents: Cow<'a, [u8]> },
 }
 
 
@@ -180,6 +204,9 @@ impl<'s, 'i> justact::Map<Action> for TracingSet<MapAsyncView<'s, 'i, Action>> {
     {
         <MapAsyncView<'s, 'i, Action> as justact::Map<Action>>::iter(&self.0).map_err(Error::Inner)
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> { <MapAsyncView<'s, 'i, Action> as justact::Map<Action>>::len(&self.0).map_err(Error::Inner) }
 }
 impl<'s, 'i> justact::MapAsync<str, Action> for TracingSet<MapAsyncView<'s, 'i, Action>> {
     #[inline]
@@ -193,7 +220,7 @@ impl<'s, 'i> justact::MapAsync<str, Action> for TracingSet<MapAsyncView<'s, 'i, 
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::EnactAction { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), action: elem })
+            .handle(Trace::JustAct(TraceJustAct::EnactAction { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), action: elem }))
             .map_err(|err| Error::TraceHandle { err })?;
         Ok(())
     }
@@ -224,6 +251,9 @@ impl justact::Map<Agreement> for TracingSet<Agreements> {
     {
         <Agreements as justact::Map<Agreement>>::iter(&self.0).map_err(Error::Inner)
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> { <Agreements as justact::Map<Agreement>>::len(&self.0).map_err(Error::Inner) }
 }
 impl justact::MapSync<Agreement> for TracingSet<Agreements> {
     #[inline]
@@ -237,7 +267,7 @@ impl justact::MapSync<Agreement> for TracingSet<Agreements> {
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::AddAgreement { agree: elem })
+            .handle(Trace::JustAct(TraceJustAct::AddAgreement { agree: elem }))
             .map_err(|err| Error::TraceHandle { err })?;
         Ok(existing)
     }
@@ -268,6 +298,11 @@ impl<'s, 'i> justact::Map<Arc<Message>> for TracingSet<MapAsyncView<'s, 'i, Arc<
     {
         <MapAsyncView<'s, 'i, Arc<Message>> as justact::Map<Arc<Message>>>::iter(&self.0).map_err(Error::Inner)
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> {
+        <MapAsyncView<'s, 'i, Arc<Message>> as justact::Map<Arc<Message>>>::len(&self.0).map_err(Error::Inner)
+    }
 }
 impl<'s, 'i> justact::MapAsync<str, Arc<Message>> for TracingSet<MapAsyncView<'s, 'i, Arc<Message>>> {
     #[inline]
@@ -282,7 +317,7 @@ impl<'s, 'i> justact::MapAsync<str, Arc<Message>> for TracingSet<MapAsyncView<'s
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::StateMessage { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), msg: elem })
+            .handle(Trace::JustAct(TraceJustAct::StateMessage { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), msg: elem }))
             .map_err(|err| Error::TraceHandle { err })?;
         Ok(())
     }
@@ -307,6 +342,9 @@ impl justact::Set<<Times as justact::Times>::Timestamp> for TracingSet<Times> {
     {
         <Times as justact::Set<<Times as justact::Times>::Timestamp>>::iter(&self.0).map_err(Error::Inner)
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> { <Times as justact::Set<<Times as justact::Times>::Timestamp>>::len(&self.0).map_err(Error::Inner) }
 }
 impl justact::SetSync<<Times as justact::Times>::Timestamp> for TracingSet<Times> {
     #[inline]
@@ -330,7 +368,7 @@ impl justact::TimesSync for TracingSet<Times> {
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::AdvanceTime { timestamp })
+            .handle(Trace::JustAct(TraceJustAct::AdvanceTime { timestamp }))
             .map_err(|err| Error::TraceHandle { err })?;
         Ok(existing)
     }

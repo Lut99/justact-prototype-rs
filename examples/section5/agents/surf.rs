@@ -1,16 +1,15 @@
-//  AMDEX.rs
+//  SURF.rs
 //    by Lut99
 //
 //  Created:
-//    15 Jan 2025, 15:22:02
+//    21 Jan 2025, 14:23:12
 //  Last edited:
-//    21 Jan 2025, 17:12:15
+//    21 Jan 2025, 14:24:57
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Describes the behaviour of the `amdex` agent as introduced in
-//!   section 5.4.1 in the paper \[1\].
+//!   Implements the SURF agent from section 5.4.1 in the paper \[1\].
 //
 
 use std::task::Poll;
@@ -32,19 +31,19 @@ use crate::error::ResultToError as _;
 
 /***** CONSTANTS *****/
 /// This agent's ID.
-pub const ID: &'static str = "amdex";
+pub const ID: &'static str = "surf";
 
 
 
 
 
 /***** LIBRARY *****/
-/// The `amdex`-agent from section 5.4.1.
-pub struct Amdex {
+/// The `surf`-agent from section 5.4.1.
+pub struct Surf {
     handle: ScopedStoreHandle,
 }
-impl Amdex {
-    /// Constructor for the `amdex` agent.
+impl Surf {
+    /// Constructor for the `surf` agent.
     ///
     /// # Arguments
     /// - `handle`: A [`StoreHandle`] that this agent can use to interact with the world. It will
@@ -52,20 +51,19 @@ impl Amdex {
     ///   dataplane handle can be dropped.
     ///
     /// # Returns
-    /// A new Amdex agent.
+    /// A new Surf agent.
     #[inline]
     pub fn new(handle: &StoreHandle) -> Self { Self { handle: handle.scope(ID) } }
 }
-impl Identifiable for Amdex {
+impl Identifiable for Surf {
     type Id = str;
 
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
+impl Agent<(String, u32), (String, u32), str, u64> for Surf {
     type Error = Error;
 
-    #[inline]
     fn poll<T, A, S, E, SM, SA>(&mut self, mut view: View<T, A, S, E>) -> Result<Poll<()>, Self::Error>
     where
         T: Times<Timestamp = u64>,
@@ -75,20 +73,15 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
         SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
-        // The AMdEX agent can publish immediately, it doesn't yet need the agreement for just
-        // stating.
-        let id: (String, u32) = (self.id().into(), 1);
-        match view.stated.contains_key(&id) {
-            Ok(true) => Ok(Poll::Ready(())),
-            Ok(false) => {
-                // Make the "container" available
-                self.handle.write(((self.id().into(), "utils".into()), "entry-count".into()), b"super_clever_code();").cast()?;
-
-                // Push the message
-                view.stated.add(Selector::All, create_message(id.1, id.0, include_str!("../slick/amdex_1.slick"))).cast()?;
-                Ok(Poll::Ready(()))
-            },
-            Err(err) => Err(Error::new(err)),
+        // SURF publishes that they do Amy's task as soon as it's available.
+        let target_id: (String, u32) = (super::amy::ID.into(), 1);
+        if view.stated.contains_key(&target_id).cast()? {
+            // Publish ours
+            view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/surf_1.slick"))).cast()?;
+            return Ok(Poll::Ready(()));
         }
+
+        // Else, keep waiting
+        Ok(Poll::Pending)
     }
 }

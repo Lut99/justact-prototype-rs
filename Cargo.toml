@@ -11,7 +11,7 @@ description = "Provides an implementation of a simple demo environment that simu
 [[example]]
 name = "section5-4-1"
 path = "examples/section5/section5.4.1.rs"
-required-features = ["log", "serde", "slick"]
+required-features = ["dataplane", "log", "serde", "slick"]
 
 
 [dependencies]
@@ -31,9 +31,9 @@ slick = { git = "https://github.com/sirkibsirkib/slick", optional = true }
 
 
 [dev-dependencies]
-clap = { version = "4.5.26", features = ["derive"] }
+clap = { version = "4.5.27", features = ["derive"] }
 humanlog = { git = "https://github.com/Lut99/humanlog-rs" }
-serde_json = "1.0.135"
+serde_json = "1.0.137"
 
 
 [features]
@@ -42,6 +42,8 @@ default = []
 all-lang = ["datalog", "slick"]
 datalog = ["dep:datalog"]
 slick = ["dep:nom", "dep:slick"]
+
+dataplane = []
 
 lang-macros = ["datalog/macros"]
 

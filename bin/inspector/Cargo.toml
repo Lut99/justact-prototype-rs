@@ -23,7 +23,7 @@ error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
 humanlog = { git = "https://github.com/Lut99/humanlog-rs" }
 justact = {git = "https://github.com/Lut99/justact-rs", branch = "journal" }
 
-justact-prototype = { path = "../..", features = ["serde"] }
+justact-prototype = { path = "../..", features = ["dataplane", "serde", "slick"] }
 
 
 [features]

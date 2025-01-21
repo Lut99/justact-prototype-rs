@@ -4,7 +4,7 @@
 //  Created:
 //    26 Nov 2024, 11:54:14
 //  Last edited:
-//    17 Jan 2025, 16:00:30
+//    21 Jan 2025, 15:06:32
 //  Auto updated?
 //    Yes
 //
@@ -165,6 +165,9 @@ impl<'f, 's> justact::Map<Effect<'f, 's>> for Denotation<'f, 's> {
     {
         Ok(self.effects.values())
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> { Ok(self.effects.len()) }
 }
 impl<'f, 's> justact::Set<Atom<&'f str, &'s str>> for Denotation<'f, 's> {
     type Error = Infallible;
@@ -181,6 +184,9 @@ impl<'f, 's> justact::Set<Atom<&'f str, &'s str>> for Denotation<'f, 's> {
     {
         Ok(self.truths.keys())
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> { Ok(self.truths.len()) }
 }
 
 
@@ -446,6 +452,8 @@ mod tests {
         {
             Ok(Some(self).into_iter())
         }
+        #[inline]
+        fn len(&self) -> Result<usize, Self::Error> { Ok(1) }
     }
 
 

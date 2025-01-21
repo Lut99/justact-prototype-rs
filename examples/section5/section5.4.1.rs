@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:49:57
 //  Last edited:
-//    21 Jan 2025, 09:59:16
+//    21 Jan 2025, 17:17:31
 //  Auto updated?
 //    Yes
 //
@@ -17,11 +17,13 @@ mod agents;
 mod error;
 mod trace;
 
-use agents::{Agent, Amdex, Amy, Consortium, Dan, StAntonius};
+use agents::consortium::Behaviour;
+use agents::{Agent, Amdex, Amy, Consortium, Dan, StAntonius, Surf};
 use clap::Parser;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
 use justact::runtime::Runtime as _;
+use justact_prototype::dataplane::StoreHandle;
 use justact_prototype::runtime::Runtime;
 use log::{error, info};
 
@@ -65,8 +67,15 @@ fn main() {
     justact_prototype::io::register_trace_handler(trace::StdoutTraceHandler);
 
     // Create the agents
-    let agents: [Agent; 4] = [Amdex.into(), Amy.into(), Dan.into(), StAntonius.into()];
-    let sync = Consortium::new(include_str!("slick/agreement.slick"));
+    let dataplane = StoreHandle::new();
+    let agents: [Agent; 5] = [
+        Amdex::new(&dataplane).into(),
+        Amy::new(&dataplane).into(),
+        Dan::new(&dataplane).into(),
+        StAntonius::new(&dataplane).into(),
+        Surf::new(&dataplane).into(),
+    ];
+    let sync = Consortium::new(Behaviour::Section5_4_1, &dataplane);
 
     // Run the runtime!
     let mut runtime = Runtime::new();

@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:26:24
 //  Last edited:
-//    16 Jan 2025, 12:16:02
+//    21 Jan 2025, 15:05:18
 //  Auto updated?
 //    Yes
 //
@@ -71,6 +71,9 @@ impl justact::Set<u64> for Times {
     {
         Ok(self.times.iter())
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> { Ok(self.times.len()) }
 }
 impl justact::SetSync<u64> for Times {
     #[inline]
@@ -200,6 +203,10 @@ where
         E: 'a + justact::Identifiable,
     {
         Ok(self.parent.views.get(self.id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {:?}", self.id)).values())
+    }
+
+    fn len(&self) -> Result<usize, Self::Error> {
+        Ok(self.parent.views.get(self.id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {:?}", self.id)).len())
     }
 }
 impl<'s, 'i, E> justact::MapAsync<str, E> for MapAsyncView<'s, 'i, E>

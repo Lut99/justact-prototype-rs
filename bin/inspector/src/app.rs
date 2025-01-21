@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    21 Jan 2025, 09:21:41
+//    21 Jan 2025, 17:23:49
 //  Auto updated?
 //    Yes
 //
@@ -12,6 +12,8 @@
 //!   Defines the main frontend app of the `inspector`.
 //
 
+use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::ops::ControlFlow;
@@ -20,9 +22,14 @@ use std::sync::Arc;
 use crossterm::event::EventStream;
 use error_trace::trace;
 use futures::{FutureExt as _, StreamExt as _};
+use justact::auxillary::Actored;
 use justact::collections::Selector;
-use justact::collections::map::InfallibleMap as _;
-use justact_prototype::io::Trace;
+use justact::collections::map::InfallibleMap;
+use justact::collections::set::InfallibleSet;
+use justact::policies::Policy as _;
+use justact_prototype::io::{Trace, TraceDataplane, TraceJustAct};
+use justact_prototype::policy::slick::{AffectorAtom, Denotation, Effect, Extractor, GroundAtom, PatternAtom, Text as SlickText};
+use justact_prototype::wire::Message;
 use log::{debug, error};
 use parking_lot::{Mutex, MutexGuard};
 use ratatui::Frame;
@@ -363,29 +370,60 @@ impl<'s> StateGuard<'s> {
             Layout::horizontal(if self.traces_opened.is_some() { [Constraint::Fill(1); 2].as_slice() } else { [Constraint::Fill(1); 1].as_slice() })
                 .split(vrects[1]);
         let titles = self.traces.iter().map(|t| match t {
-            Trace::AddAgreement { agree } => {
-                let mut text = Text::from("Published agreement ").fg(left_color);
-                text.push_span(Span::from(format!("\"{} {}\"", agree.message.id.0, agree.message.id.1)).green());
-                text
+            Trace::JustAct(t) => match t {
+                TraceJustAct::AddAgreement { agree } => {
+                    let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from("[JUSTACT]").italic());
+                    text.push_span(" Published agreement ");
+                    text.push_span(Span::from(format!("\"{} {}\"", agree.message.id.0, agree.message.id.1)).green());
+                    text
+                },
+                TraceJustAct::AdvanceTime { timestamp } => {
+                    let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from("[JUSTACT]").italic());
+                    text.push_span(" Advanced to time ");
+                    text.push_span(Span::from(format!("{timestamp}")).cyan());
+                    text
+                },
+                TraceJustAct::EnactAction { who, to: _, action } => {
+                    let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from("[JUSTACT]").italic());
+                    text.push_span(" Agent ");
+                    text.push_span(Span::from(format!("{who}")).bold());
+                    text.push_span(" enacted action ");
+                    text.push_span(Span::from(format!("\"{} {}\"", action.id.0, action.id.1)).yellow());
+                    text
+                },
+                TraceJustAct::StateMessage { who, to: _, msg } => {
+                    let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from("[JUSTACT]").italic());
+                    text.push_span(" Agent ");
+                    text.push_span(Span::from(format!("{who}")).bold());
+                    text.push_span(" stated message ");
+                    text.push_span(Span::from(format!("\"{} {}\"", msg.id.0, msg.id.1)).red());
+                    text
+                },
             },
-            Trace::AdvanceTime { timestamp } => {
-                let mut text = Text::from("Advanced to time ").fg(left_color);
-                text.push_span(Span::from(format!("{timestamp}")).cyan());
-                text
-            },
-            Trace::EnactAction { who, to: _, action } => {
-                let mut text = Text::from("Agent ").fg(left_color);
-                text.push_span(Span::from(format!("{who:?}")).bold());
-                text.push_span(" enacted action ");
-                text.push_span(Span::from(format!("\"{} {}\"", action.id.0, action.id.1)).yellow());
-                text
-            },
-            Trace::StateMessage { who, to: _, msg } => {
-                let mut text = Text::from("Agent ").fg(left_color);
-                text.push_span(Span::from(format!("{who:?}")).bold());
-                text.push_span(" stated message ");
-                text.push_span(Span::from(format!("\"{} {}\"", msg.id.0, msg.id.1)).red());
-                text
+
+            Trace::Dataplane(t) => match t {
+                TraceDataplane::Read { who, id, contents: _ } => {
+                    let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from("[DATAPLN]").italic().black().on_white());
+                    text.push_span(" Agent ");
+                    text.push_span(Span::from(format!("{who}")).bold());
+                    text.push_span(" read variable ");
+                    text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).green());
+                    text
+                },
+                TraceDataplane::Write { who, id, new, contents: _ } => {
+                    let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from("[DATAPLN]").italic().black().on_white());
+                    text.push_span(" Agent ");
+                    text.push_span(Span::from(format!("{who}")).bold());
+                    text.push_span(format!(" wrote to{} variable ", if *new { " new" } else { "" }));
+                    text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).green());
+                    text
+                },
             },
         });
         frame.render_stateful_widget(
@@ -406,219 +444,404 @@ impl<'s> StateGuard<'s> {
 
             // Render the components
             match trace {
-                Trace::AddAgreement { agree } => {
-                    // Prepare the layout
-                    let text = Text::from(agree.message.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
-                    let vrects = Layout::vertical(
-                        Some(Constraint::Length(1)).into_iter().cycle().take(4).chain(Some(Constraint::Length(2 + text.height() as u16))),
-                    )
-                    .split(block.inner(body_rects[1]));
+                Trace::JustAct(trace) => match trace {
+                    TraceJustAct::AddAgreement { agree } => {
+                        // Prepare the layout
+                        let text = Text::from(agree.message.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
+                        let vrects = Layout::vertical(
+                            Some(Constraint::Length(1)).into_iter().cycle().take(4).chain(Some(Constraint::Length(2 + text.height() as u16))),
+                        )
+                        .split(block.inner(body_rects[1]));
 
-                    // Render the ID & at times
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Agreement identifier: ");
-                            text.push_span(Span::from(format!("{} {}", agree.message.id.0, agree.message.id.1)).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[0],
-                    );
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Agreement author    : ");
-                            text.push_span(Span::from(&agree.message.id.0).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[1],
-                    );
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Agreement valid at  : ");
-                            text.push_span(Span::from(agree.at.to_string()).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[2],
-                    );
-
-                    // Render the payload
-                    // TODO: Scroll
-                    frame.render_widget(Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)), vrects[4]);
-                },
-                Trace::AdvanceTime { timestamp } => {
-                    // Render the time
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Time advanced to: ");
-                            text.push_span(Span::from(timestamp.to_string()).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        block.inner(body_rects[1]),
-                    );
-                },
-                Trace::EnactAction { who, to, action } => {
-                    // Prepare the layout
-                    let basis_text = Text::from(action.basis.message.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
-                    let just_text = Text::from(
-                        action
-                            .justification
-                            .iter()
-                            .flat_map(|m| {
-                                // Filter out the agreement
-                                if m.id == action.basis.message.id {
-                                    Box::new([Line::raw(format!("// <basis {} {}>", m.id.0, m.id.1)), Line::raw("")].into_iter())
-                                        as Box<dyn Iterator<Item = Line>>
-                                } else {
-                                    Box::new(
-                                        [Line::raw(format!("// {} {}", m.id.0, m.id.1))]
-                                            .into_iter()
-                                            .chain(m.payload.lines().map(|l| Line::raw(l)))
-                                            .chain([Line::raw("")]),
-                                    )
-                                }
+                        // Render the ID & at times
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Agreement identifier: ");
+                                text.push_span(Span::from(format!("{} {}", agree.message.id.0, agree.message.id.1)).bold());
+                                text
                             })
-                            .collect::<Vec<Line>>(),
-                    );
-                    let vrects = Layout::vertical(
-                        Some(Constraint::Length(1))
-                            .into_iter()
-                            .cycle()
-                            .take(9)
-                            .chain(Some(Constraint::Length(2 + basis_text.height() as u16)))
-                            .chain(Some(Constraint::Length(1)))
-                            .chain(Some(Constraint::Length(2 + just_text.height() as u16))),
-                    )
-                    .split(block.inner(body_rects[1]));
+                            .fg(right_color),
+                            vrects[0],
+                        );
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Agreement author    : ");
+                                text.push_span(Span::from(&agree.message.id.0).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[1],
+                        );
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Agreement valid at  : ");
+                                text.push_span(Span::from(agree.at.to_string()).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[2],
+                        );
 
-                    // Render who sent it to whom
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Enacted by: ");
-                            text.push_span(Span::from(who.as_ref()).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[0],
-                    );
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Enacted to: ");
-                            text.push_span(
-                                Span::from(match to {
-                                    Selector::Agent(agent) => agent.as_ref(),
-                                    Selector::All => "<everyone>",
-                                })
-                                .bold(),
+                        // Render the payload
+                        // TODO: Scroll
+                        frame
+                            .render_widget(Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)), vrects[4]);
+                    },
+                    TraceJustAct::AdvanceTime { timestamp } => {
+                        // Render the time
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Time advanced to: ");
+                                text.push_span(Span::from(timestamp.to_string()).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            block.inner(body_rects[1]),
+                        );
+                    },
+                    TraceJustAct::EnactAction { who, to, action } => {
+                        // Prepare the layout
+                        let denot: Result<Denotation, _> = Extractor.extract_with_actor(action.actor_id(), &action.justification).map(|mut pol| {
+                            pol.update_effect_pattern(
+                                PatternAtom::Tuple(vec![
+                                    PatternAtom::Variable(SlickText::from_str("Worker")),
+                                    PatternAtom::ConstantSet(vec![SlickText::from_str("reads"), SlickText::from_str("writes")]),
+                                    PatternAtom::Variable(SlickText::from_str("Variable")),
+                                ]),
+                                AffectorAtom::Variable(SlickText::from_str("Worker")),
                             );
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[1],
-                    );
+                            pol.truths()
+                        });
+                        let denot = denot.map(|d| {
+                            let mut truths: Vec<(bool, String)> = <Denotation as InfallibleSet<GroundAtom>>::iter(&d)
+                                .map(|t| {
+                                    (
+                                        match t {
+                                            GroundAtom::Constant(t) if format!("{t:?}") == "error" => true,
+                                            GroundAtom::Tuple(ts) if !ts.is_empty() && format!("{:?}", ts[0]) == "error" => true,
+                                            _ => false,
+                                        },
+                                        format!("{t:?}"),
+                                    )
+                                })
+                                .collect();
+                            truths.sort_by(|lhs, rhs| match (lhs.0, rhs.0) {
+                                (true, false) => Ordering::Less,
+                                (false, true) => Ordering::Greater,
+                                (true, true) | (false, false) => lhs.1.cmp(&rhs.1),
+                            });
+                            (
+                                d,
+                                Text::from(
+                                    truths
+                                        .into_iter()
+                                        .map(|(is_err, line)| if is_err { Line::from(line).bold().red() } else { Line::from(line) })
+                                        .collect::<Vec<Line>>(),
+                                ),
+                            )
+                        });
+                        let vrects = Layout::vertical(
+                            [Constraint::Length(1); 13]
+                                .into_iter()
+                                .chain([Constraint::Length(1)].into_iter().cycle().take({
+                                    let n: usize = denot.as_ref().map(|(d, _)| <Denotation as InfallibleMap<Effect>>::len(d)).unwrap_or(0);
+                                    if n > 0 { n } else { 1 }
+                                }))
+                                .chain([Constraint::Length(denot.as_ref().map(|(_, text)| text.height() as u16).unwrap_or(0))]),
+                        )
+                        .split(block.inner(body_rects[1]));
 
-                    // Render the ID & at times
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Action identifier: ");
-                            text.push_span(Span::from(format!("{} {}", action.id.0, action.id.1)).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[3],
-                    );
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Action actor     : ");
-                            text.push_span(Span::from(&action.id.0).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[4],
-                    );
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Action taken at  : ");
-                            text.push_span(Span::from(action.basis.at.to_string()).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[5],
-                    );
+                        // Render who sent it to whom
+                        let mut i: usize = 0;
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Enacted by: ");
+                                text.push_span(Span::from(who.as_ref()).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[i],
+                        );
+                        i += 1;
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Enacted to: ");
+                                text.push_span(
+                                    Span::from(match to {
+                                        Selector::Agent(agent) => agent.as_ref(),
+                                        Selector::All => "<everyone>",
+                                    })
+                                    .bold(),
+                                );
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[i],
+                        );
+                        i += 2;
 
-                    // Render the validity!
+                        // Render the ID & at times
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Action identifier: ");
+                                text.push_span(Span::from(format!("{} {}", action.id.0, action.id.1)).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[i],
+                        );
+                        i += 1;
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Action actor     : ");
+                                text.push_span(Span::from(&action.id.0).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[i],
+                        );
+                        i += 1;
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Action taken at  : ");
+                                text.push_span(Span::from(action.basis.at.to_string()).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[i],
+                        );
+                        i += 2;
 
-                    // Render the basis payload
-                    // TODO: Scroll
-                    frame
-                        .render_widget(Paragraph::new(basis_text).fg(right_color).block(Block::bordered().title("Basis").fg(right_color)), vrects[7]);
+                        // Render the messages part of it
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Basis         : ");
+                                text.push_span(Span::from(format!("{} {}", action.basis.message.id.0, action.basis.message.id.1)).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[i],
+                        );
+                        i += 1;
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Justification : ");
+                                if !action.justification.is_empty() {
+                                    let mut msgs: Vec<&Arc<Message>> = action.justification.iter().collect();
+                                    msgs.sort_by(|lhs, rhs| lhs.id.0.cmp(&rhs.id.0).then_with(|| lhs.id.1.cmp(&rhs.id.1)));
+                                    for (i, msg) in msgs.into_iter().enumerate() {
+                                        if i > 0 && i < action.justification.len() - 1 {
+                                            text.push_span(", ");
+                                        } else if i > 0 {
+                                            text.push_span(" and ");
+                                        }
+                                        text.push_span(Span::from(format!("{} {}", msg.id.0, msg.id.1)).bold());
+                                    }
+                                } else {
+                                    text.push_span(" <empty>");
+                                }
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[i],
+                        );
+                        i += 2;
 
-                    // Render the justification
-                    // TODO: Scroll
-                    frame.render_widget(
-                        Paragraph::new(just_text).fg(right_color).block(Block::bordered().title("Justification").fg(right_color)),
-                        vrects[8],
-                    );
+                        // Render the interpretation part of it
+                        match denot {
+                            Ok((denot, truths)) => {
+                                // Validity
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Validity : ");
+                                        text.push_span(if denot.is_valid() {
+                                            Span::from("OK").bold().green()
+                                        } else {
+                                            Span::from("INVALID").bold().red()
+                                        });
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[i],
+                                );
+                                i += 1;
+                                // Effects
+                                frame.render_widget(Paragraph::new("Effects  : ").fg(right_color), vrects[i]);
+                                i += 1;
+                                if !<Denotation as InfallibleMap<Effect>>::is_empty(&denot) {
+                                    let mut effects: Vec<&Effect> = <Denotation as InfallibleMap<Effect>>::iter(&denot).collect();
+                                    effects.sort_by_key(|effect| format!("{effect:?}"));
+                                    for effect in effects {
+                                        frame.render_widget(
+                                            Paragraph::new({
+                                                let mut text = Text::from(" - ");
+                                                text.push_span(Span::from(format!("{:?}", effect.fact)).bold());
+                                                text
+                                            })
+                                            .fg(right_color),
+                                            vrects[i],
+                                        );
+                                        i += 1;
+                                    }
+                                } else {
+                                    frame.render_widget(Paragraph::new("   <none>").fg(right_color), vrects[i]);
+                                    i += 1;
+                                }
+                                i += 1;
+
+                                // Finally, the denotation
+                                frame.render_widget(
+                                    Paragraph::new(truths).block(Block::bordered().title("Denotation").fg(right_color)).fg(right_color),
+                                    vrects[i],
+                                );
+                            },
+                            Err(err) => todo!(),
+                        }
+                    },
+                    TraceJustAct::StateMessage { who, to, msg } => {
+                        // Prepare the layout
+                        let text = Text::from(msg.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
+                        let vrects = Layout::vertical(
+                            Some(Constraint::Length(1)).into_iter().cycle().take(6).chain(Some(Constraint::Length(2 + text.height() as u16))),
+                        )
+                        .split(block.inner(body_rects[1]));
+
+                        // Render who sent it to whom
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Stated by: ");
+                                text.push_span(Span::from(who.as_ref()).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[0],
+                        );
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Stated to: ");
+                                text.push_span(
+                                    Span::from(match to {
+                                        Selector::Agent(agent) => agent.as_ref(),
+                                        Selector::All => "<everyone>",
+                                    })
+                                    .bold(),
+                                );
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[1],
+                        );
+
+                        // Render the ID
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Message identifier: ");
+                                text.push_span(Span::from(format!("{} {}", msg.id.0, msg.id.1)).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[3],
+                        );
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Message author    : ");
+                                text.push_span(Span::from(&msg.id.0).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[4],
+                        );
+
+                        // Render the basis payload
+                        // TODO: Scroll
+                        frame
+                            .render_widget(Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)), vrects[6]);
+                    },
                 },
-                Trace::StateMessage { who, to, msg } => {
-                    // Prepare the layout
-                    let text = Text::from(msg.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
-                    let vrects = Layout::vertical(
-                        Some(Constraint::Length(1)).into_iter().cycle().take(6).chain(Some(Constraint::Length(2 + text.height() as u16))),
-                    )
-                    .split(block.inner(body_rects[1]));
 
-                    // Render who sent it to whom
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Stated by: ");
-                            text.push_span(Span::from(who.as_ref()).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[0],
-                    );
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Stated to: ");
-                            text.push_span(
-                                Span::from(match to {
-                                    Selector::Agent(agent) => agent.as_ref(),
-                                    Selector::All => "<everyone>",
-                                })
-                                .bold(),
+                Trace::Dataplane(trace) => match trace {
+                    TraceDataplane::Read { who, id, contents } => {
+                        // Prepare the layout
+                        let scontents: Option<Cow<str>> = contents.as_ref().map(Cow::as_ref).map(String::from_utf8_lossy);
+                        let lines = scontents
+                            .into_iter()
+                            .map(|c| c.lines().map(|l| Line::raw(l.to_string())).collect::<Vec<Line>>())
+                            .flatten()
+                            .collect::<Vec<Line>>();
+                        let lines = if !lines.is_empty() { lines } else { vec![Line::from("<no content>")] };
+                        let text = Text::from(lines);
+                        let vrects = Layout::vertical([Constraint::Length(1); 3].into_iter().chain([Constraint::Length(2 + text.height() as u16)]))
+                            .split(block.inner(body_rects[1]));
+
+                        // Write the info first
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Reader   : ");
+                                text.push_span(Span::from(who.as_ref()).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[0],
+                        );
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Variable : ");
+                                text.push_span(Span::from(format!("({} {}) {}", id.0.0, id.0.1, id.1)).bold());
+                                if contents.is_none() {
+                                    text.push_span(Span::from(" NON-EXISTING!!!").bold().white().on_red());
+                                }
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[1],
+                        );
+
+                        // Render the payload
+                        if contents.is_some() {
+                            frame.render_widget(
+                                Paragraph::new(text).block(Block::bordered().title("Contents read").fg(right_color)).fg(right_color),
+                                vrects[3],
                             );
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[1],
-                    );
+                        }
+                    },
+                    TraceDataplane::Write { who, id, new, contents } => {
+                        // Prepare the layout
+                        let scontents: Cow<str> = String::from_utf8_lossy(contents);
+                        let lines = scontents.lines().map(|l| Line::raw(l.to_string())).collect::<Vec<Line>>();
+                        let lines = if !lines.is_empty() { lines } else { vec![Line::from("<no content>")] };
+                        let text = Text::from(lines);
+                        let vrects = Layout::vertical([Constraint::Length(1); 3].into_iter().chain([Constraint::Length(2 + text.height() as u16)]))
+                            .split(block.inner(body_rects[1]));
 
-                    // Render the ID
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Message identifier: ");
-                            text.push_span(Span::from(format!("{} {}", msg.id.0, msg.id.1)).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[3],
-                    );
-                    frame.render_widget(
-                        Paragraph::new({
-                            let mut text = Text::from("Message author    : ");
-                            text.push_span(Span::from(&msg.id.0).bold());
-                            text
-                        })
-                        .fg(right_color),
-                        vrects[4],
-                    );
+                        // Write the info first
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Writer   : ");
+                                text.push_span(Span::from(who.as_ref()).bold());
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[0],
+                        );
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Variable : ");
+                                text.push_span(Span::from(format!("({} {}) {}", id.0.0, id.0.1, id.1)).bold());
+                                if *new {
+                                    text.push_span(Span::from(" (NEW)").bold().cyan());
+                                }
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[1],
+                        );
 
-                    // Render the basis payload
-                    // TODO: Scroll
-                    frame.render_widget(Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)), vrects[6]);
+                        // Render the payload
+                        frame.render_widget(
+                            Paragraph::new(text).block(Block::bordered().title("Contents written").fg(right_color)).fg(right_color),
+                            vrects[3],
+                        );
+                    },
                 },
             }
         }

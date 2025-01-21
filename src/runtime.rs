@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:05:42
 //  Last edited:
-//    16 Jan 2025, 12:15:05
+//    21 Jan 2025, 17:19:37
 //  Auto updated?
 //    Yes
 //
@@ -102,6 +102,8 @@ impl justact::Runtime for Runtime {
         A: justact::Agent<Self::MessageId, Self::ActionId, Self::Payload, Self::Timestamp, Id = Self::AgentId>,
     {
         // First, register any non-registered agents
+        self.stated.register(synchronizer.id());
+        self.enacted.register(synchronizer.id());
         let mut agents: Vec<A> = agents.into_iter().collect();
         for agent in &agents {
             self.stated.register(agent.id());

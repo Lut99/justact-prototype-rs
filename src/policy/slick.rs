@@ -4,7 +4,7 @@
 //  Created:
 //    19 Dec 2024, 12:09:23
 //  Last edited:
-//    17 Jan 2025, 16:54:21
+//    21 Jan 2025, 16:51:31
 //  Auto updated?
 //    Yes
 //
@@ -19,8 +19,9 @@ use std::ops::{Deref, DerefMut};
 
 use nom::error::VerboseError;
 use slick::infer::Config;
-use slick::text::Text;
-use slick::{Atom, GroundAtom, Program, Rule, RuleBody, parse};
+pub use slick::text::Text;
+pub use slick::{Atom, GroundAtom};
+use slick::{Program, Rule, RuleBody, parse};
 mod justact {
     pub use ::justact::auxillary::{Affectored, Identifiable};
     pub use ::justact::collections::map::Map;
@@ -53,6 +54,21 @@ pub enum SyntaxError {
 
 
 /***** HELPERS *****/
+/// It's either a Slick atom (constant, variable, tuple or wildcard) OR a set of allowed constants.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum PatternAtom {
+    /// A Slick constant (e.g., `amy`).
+    Constant(Text),
+    /// A limited set of constants (e.g., only `amy` or `bob`).
+    ConstantSet(Vec<Text>),
+    /// A Slick variable (e.g., `Person`).
+    Variable(Text),
+    /// A Slick tuple of nested [`PatternAtom`]s (e.g., `amy Amy (bob Bob)`).
+    Tuple(Vec<Self>),
+    /// A Slick wildcard (i.e., `_`).
+    Wildcard,
+}
+
 /// It's either a Slick variable or constant.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum AffectorAtom {
@@ -113,31 +129,39 @@ impl Denotation {
     ///
     /// # Arguments
     /// - `int`: The [`Denotation`](slick::infer::Denotation) to build this Denotation from.
-    /// - `pat`: An [`Atom`] that describes a pattern for recognizing effets.
+    /// - `pat`: A [`PatternAtom`] that describes a pattern for recognizing effets.
     /// - `affector`: An [`AffectorAtom`] that describes how to extract the affector from the effect.
     ///
     /// # Returns
     /// A new Denotation that is JustAct^{TM} compliant.
     #[inline]
-    pub fn from_interpretation(int: slick::infer::Denotation, pat: Atom, affector: AffectorAtom) -> Self {
+    pub fn from_interpretation(int: slick::infer::Denotation, pat: PatternAtom, affector: AffectorAtom) -> Self {
         let mut truths: HashMap<GroundAtom, Option<bool>> = HashMap::new();
         let mut effects: HashMap<GroundAtom, Effect> = HashMap::new();
         for (fact, value) in int.trues.into_iter().map(|v| (v, Some(true))).chain(int.unknowns.into_iter().map(|v| (v, None))) {
             // See if the fact matches the effect pattern
-            fn match_effect(fact: &GroundAtom, value: Option<bool>, pat: &Atom) -> bool {
+            fn match_effect(fact: &GroundAtom, value: Option<bool>, pat: &PatternAtom) -> bool {
                 #[cfg(feature = "log")]
                 log::trace!("Finding effect pattern '{pat:?}' in '{fact:?}'");
                 match (fact, pat) {
                     // If there's constants involved in the pattern, match that
-                    (GroundAtom::Constant(l), Atom::Constant(r)) => {
+                    (GroundAtom::Constant(l), PatternAtom::Constant(r)) => {
+                        #[cfg(feature = "log")]
                         log::trace!("--> fact '{l:?}' is a constant; pattern '{r:?}' is a constant");
                         l == r
                     },
-                    (GroundAtom::Tuple(l), Atom::Tuple(r)) => {
+                    (GroundAtom::Constant(l), PatternAtom::ConstantSet(r)) => {
+                        #[cfg(feature = "log")]
+                        log::trace!("--> fact '{l:?}' is a constant; pattern '{r:?}' is a constant set");
+                        r.contains(l)
+                    },
+                    (GroundAtom::Tuple(l), PatternAtom::Tuple(r)) => {
+                        #[cfg(feature = "log")]
                         log::trace!("--> fact '{l:?}' is a tuple; pattern '{r:?}' is a tuple");
                         if l.len() == r.len() {
                             // If the arity matches, then check if all the patterns match
                             for (l, r) in l.iter().zip(r.iter()) {
+                                #[cfg(feature = "log")]
                                 log::trace!("RECURSINGGGG");
                                 if !match_effect(l, value, r) {
                                     return false;
@@ -150,17 +174,22 @@ impl Denotation {
                     },
 
                     // If the pattern IS a variable, ez
-                    (fact, Atom::Variable(var)) => {
+                    #[allow(unused)]
+                    (fact, PatternAtom::Variable(var)) => {
+                        #[cfg(feature = "log")]
                         log::trace!("--> fact '{fact:?}' is *something*; pattern '{var:?}' is a variable");
                         true
                     },
-                    (fact, Atom::Wildcard) => {
+                    #[allow(unused)]
+                    (fact, PatternAtom::Wildcard) => {
+                        #[cfg(feature = "log")]
                         log::trace!("--> fact '{fact:?}' is *something*; pattern '{pat:?}' is a wildcard");
                         true
                     },
 
                     // Otherwise, don't add
                     _ => {
+                        #[cfg(feature = "log")]
                         log::trace!("--> fact '{fact:?}' is not a constant or tuple while the pattern is; and pattern '{pat:?}' is not a variable",);
                         false
                     },
@@ -173,10 +202,11 @@ impl Denotation {
                         effects.insert(fact.clone(), Effect { fact: fact.clone(), affector: GroundAtom::Constant(c) });
                     },
                     AffectorAtom::Variable(v) => {
-                        fn get_var_contents<'f>(fact: &'f GroundAtom, pat: &Atom, affector_var: &Text) -> Option<&'f GroundAtom> {
+                        fn get_var_contents<'f>(fact: &'f GroundAtom, pat: &PatternAtom, affector_var: &Text) -> Option<&'f GroundAtom> {
                             match pat {
-                                Atom::Constant(_) => None,
-                                Atom::Tuple(pat) => {
+                                PatternAtom::Constant(_) => None,
+                                PatternAtom::ConstantSet(_) => None,
+                                PatternAtom::Tuple(pat) => {
                                     for (fact, pat) in if let GroundAtom::Tuple(fact) = fact { fact.iter() } else { unreachable!() }.zip(pat.iter()) {
                                         if let Some(res) = get_var_contents(fact, pat, affector_var) {
                                             return Some(res);
@@ -186,14 +216,14 @@ impl Denotation {
                                     }
                                     None
                                 },
-                                Atom::Variable(pat) => {
+                                PatternAtom::Variable(pat) => {
                                     if pat == affector_var {
                                         Some(fact)
                                     } else {
                                         None
                                     }
                                 },
-                                Atom::Wildcard => Some(fact),
+                                PatternAtom::Wildcard => Some(fact),
                             }
                         }
                         match get_var_contents(&fact, &pat, &v) {
@@ -253,6 +283,9 @@ impl justact::Map<Effect> for Denotation {
     {
         Ok(self.effects.values())
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> { Ok(self.effects.len()) }
 }
 impl justact::Set<GroundAtom> for Denotation {
     type Error = Infallible;
@@ -267,6 +300,9 @@ impl justact::Set<GroundAtom> for Denotation {
     {
         Ok(self.truths.keys())
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> { Ok(self.truths.len()) }
 }
 impl justact::Denotation for Denotation {
     type Effect = Effect;
@@ -282,7 +318,7 @@ impl justact::Denotation for Denotation {
 #[derive(Clone, Debug)]
 pub struct Policy {
     /// The pattern to match effects.
-    pat:      Atom,
+    pat:      PatternAtom,
     /// How to find the affector from effects.
     affector: AffectorAtom,
     /// The program we wrap with actual policy.
@@ -292,11 +328,11 @@ impl Default for Policy {
     #[inline]
     fn default() -> Self {
         Self {
-            pat:      Atom::Tuple(vec![
-                Atom::Constant(Text::from_str("effect")),
-                Atom::Variable(Text::from_str("Effect")),
-                Atom::Constant(Text::from_str("by")),
-                Atom::Variable(Text::from_str("Affector")),
+            pat:      PatternAtom::Tuple(vec![
+                PatternAtom::Constant(Text::from_str("effect")),
+                PatternAtom::Variable(Text::from_str("Effect")),
+                PatternAtom::Constant(Text::from_str("by")),
+                PatternAtom::Variable(Text::from_str("Affector")),
             ]),
             affector: AffectorAtom::Variable(Text::from_str("Affector")),
             program:  Program { rules: Vec::new() },
@@ -316,7 +352,7 @@ impl Policy {
     /// - `pat`: The pattern used to match effects.
     /// - `affector`: What affector to provide for effects (given as a special [`AffectorAtom`]).
     #[inline]
-    pub fn update_effect_pattern(&mut self, pat: Atom, affector: AffectorAtom) {
+    pub fn update_effect_pattern(&mut self, pat: PatternAtom, affector: AffectorAtom) {
         self.pat = pat;
         self.affector = affector;
     }
@@ -355,6 +391,7 @@ impl justact::Policy for Policy {
         ]);
         match self.program.clone().denotation(&Config::default()) {
             Ok(den) => Denotation::from_interpretation(den, self.pat.clone(), self.affector.clone()),
+            #[allow(unused)]
             Err(err) => {
                 #[cfg(feature = "log")]
                 log::error!("Failed to compute denotation: {:?}\n\nProgram:\n{}\n{:?}\n{}\n", err, "-".repeat(80), self.program, "-".repeat(80));
@@ -389,6 +426,34 @@ impl DerefMut for Policy {
 /// Represents the [`Extractor`] for Slick's [`Program`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Extractor;
+impl Extractor {
+    /// Extracts some policy with the additional, special `actor`-rule.
+    ///
+    /// # Arguments
+    /// - `actor`: Some identifier of an actor that is acting.
+    /// - `msgs`: Something message-set(-like) to extract policy from.
+    ///
+    /// # Returns
+    /// A new set of [`Extractor::Policy`].
+    pub fn extract_with_actor<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = (String, u32), AuthorId = str, Payload = str>>(
+        &self,
+        actor: &str,
+        msgs: &'m impl justact::Map<M>,
+    ) -> Result<<Self as justact::Extractor<(String, u32), str, str>>::Policy<'m>, <Self as justact::Extractor<(String, u32), str, str>>::Error<'m>>
+    {
+        // Get the policy
+        let mut pol = <Self as justact::Extractor<(String, u32), str, str>>::extract(self, msgs)?;
+
+        // Inject the actor fact
+        pol.program.rules.push(Rule {
+            consequents: vec![Atom::Tuple(vec![Atom::Constant(Text::from_str("actor")), Atom::Constant(Text::from_str(actor))])],
+            rule_body:   RuleBody { pos_antecedents: Vec::new(), neg_antecedents: Vec::new(), checks: Vec::new() },
+        });
+
+        // OK done
+        Ok(pol)
+    }
+}
 impl justact::Extractor<(String, u32), str, str> for Extractor {
     type Policy<'m> = Policy;
     type Error<'m> = SyntaxError;
@@ -493,12 +558,12 @@ mod tests {
 
     /// Generates the effect pattern.
     #[inline]
-    fn make_pattern() -> Atom {
-        Atom::Tuple(vec![
-            Atom::Constant(Text::from_str("effect")),
-            Atom::Variable(Text::from_str("Effect")),
-            Atom::Constant(Text::from_str("by")),
-            Atom::Variable(Text::from_str("Affector")),
+    fn make_pattern() -> PatternAtom {
+        PatternAtom::Tuple(vec![
+            PatternAtom::Constant(Text::from_str("effect")),
+            PatternAtom::Variable(Text::from_str("Effect")),
+            PatternAtom::Constant(Text::from_str("by")),
+            PatternAtom::Variable(Text::from_str("Affector")),
         ])
     }
 
@@ -544,6 +609,8 @@ mod tests {
         {
             Ok(Some(self).into_iter())
         }
+        #[inline]
+        fn len(&self) -> Result<usize, Self::Error> { Ok(1) }
     }
 
 
@@ -733,7 +800,7 @@ mod tests {
         // Empty pattern, effect program
         let program = parse::program("effect read by amy.").unwrap();
         let int = program.1.denotation(&Config::default()).unwrap();
-        let den = Denotation::from_interpretation(int, Atom::Tuple(vec![]), AffectorAtom::Constant(Text::from_str("affector")));
+        let den = Denotation::from_interpretation(int, PatternAtom::Tuple(vec![]), AffectorAtom::Constant(Text::from_str("affector")));
         assert!(den.effects.is_empty());
 
         // Non-empty pattern, empty program

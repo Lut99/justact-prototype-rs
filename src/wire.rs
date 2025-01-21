@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:11:30
 //  Last edited:
-//    17 Jan 2025, 15:41:27
+//    21 Jan 2025, 15:04:14
 //  Auto updated?
 //    Yes
 //
@@ -155,4 +155,7 @@ impl justact::Map<Self> for Message {
     {
         Ok(Some(self).into_iter())
     }
+
+    #[inline]
+    fn len(&self) -> Result<usize, Self::Error> { Ok(1) }
 }

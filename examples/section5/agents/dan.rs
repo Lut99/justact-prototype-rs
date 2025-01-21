@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 09:25:37
 //  Last edited:
-//    21 Jan 2025, 09:56:52
+//    21 Jan 2025, 17:01:50
 //  Auto updated?
 //    Yes
 //
@@ -23,15 +23,39 @@ use justact::collections::Selector;
 use justact::collections::map::{Map, MapAsync};
 use justact::messages::ConstructableMessage;
 use justact::times::Times;
+use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
 
 use super::create_message;
 pub use crate::error::Error;
 use crate::error::ResultToError as _;
 
 
+/***** CONSTANTS *****/
+/// This agent's ID.
+pub const ID: &'static str = "dan";
+
+
+
+
+
 /***** LIBRARY *****/
 /// The `dan`-agent from section 5.4.1.
-pub struct Dan;
+pub struct Dan {
+    _handle: ScopedStoreHandle,
+}
+impl Dan {
+    /// Constructor for the `dan` agent.
+    ///
+    /// # Arguments
+    /// - `handle`: A [`StoreHandle`] that this agent can use to interact with the world. It will
+    ///   clone it internally, creating its own handle to the underlying store, meaning that the
+    ///   dataplane handle can be dropped.
+    ///
+    /// # Returns
+    /// A new Dan agent.
+    #[inline]
+    pub fn new(handle: &StoreHandle) -> Self { Self { _handle: handle.scope(ID) } }
+}
 impl Identifiable for Dan {
     type Id = str;
 

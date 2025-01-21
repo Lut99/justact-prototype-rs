@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:50:19
 //  Last edited:
-//    21 Jan 2025, 09:58:53
+//    21 Jan 2025, 14:43:18
 //  Auto updated?
 //    Yes
 //
@@ -18,8 +18,10 @@ pub mod amy;
 pub mod consortium;
 pub mod dan;
 pub mod st_antonius;
+pub mod surf;
 
 // Use the agents themselves
+use std::hash::Hash;
 use std::task::Poll;
 
 pub use amdex::Amdex;
@@ -27,15 +29,16 @@ pub use amy::Amy;
 pub use consortium::Consortium;
 pub use dan::Dan;
 pub use st_antonius::StAntonius;
+pub use surf::Surf;
 use thiserror::Error;
 
 mod justact {
     pub use ::justact::actions::ConstructableAction;
     pub use ::justact::actors::{Agent, View};
     pub use ::justact::agreements::Agreement;
-    pub use ::justact::auxillary::Identifiable;
-    pub use ::justact::collections::map::{Map, MapAsync};
-    pub use ::justact::messages::ConstructableMessage;
+    pub use ::justact::auxillary::{Authored, Identifiable};
+    pub use ::justact::collections::map::{InfallibleMapSync, Map, MapAsync};
+    pub use ::justact::messages::{ConstructableMessage, Message, MessageSet};
     pub use ::justact::times::Times;
 }
 
@@ -56,6 +59,9 @@ pub enum Error {
     /// The `st-antonius` agent failed.
     #[error("The `st-antonius`-agent failed")]
     StAntonius(#[source] st_antonius::Error),
+    /// The `surf` agent failed.
+    #[error("The `surf`-agent failed")]
+    Surf(#[source] surf::Error),
 }
 
 
@@ -65,7 +71,7 @@ pub enum Error {
 /***** AGENT HELPER FUNCTIONS *****/
 /// Creates a message of type `SM`.
 ///
-/// This is done through a helper message to avoid the awkward double author ID.
+/// This is done through a helper function to avoid the awkward double author ID.
 ///
 /// # Arguments
 /// - `id`: The identifier of the message.
@@ -83,6 +89,43 @@ where
     SM::new((String::new(), id), author_id.into(), payload.into())
 }
 
+/// Creates a message of type `SA`.
+///
+/// This is done through a helper function to avoid the awkward double author ID.
+///
+/// # Arguments
+/// - `id`: The identifier of the action.
+/// - `actor_id`: The identifier of the action's actor. Needn't be the same as the author of any
+///   message.
+/// - `basis`: The basis of the action. Note that **this will be automatically injected in the `just`ification.**
+/// - `just`: The justification for this action. The `basis` will automatically be injected into this.
+///
+/// # Returns
+/// A new message of type `SA`, constructed with its
+/// [`ConstructableAction`](justact::ConstructableAction) implementation.
+fn create_action<SA>(
+    id: u32,
+    actor_id: impl Into<String>,
+    basis: impl Into<justact::Agreement<SA::Message, SA::Timestamp>>,
+    just: impl Into<justact::MessageSet<SA::Message>>,
+) -> SA
+where
+    SA: justact::ConstructableAction<Id = (String, u32), ActorId = str>,
+    SA::Message: Clone + justact::Message,
+    <SA::Message as justact::Identifiable>::Id: ToOwned,
+    <SA::Message as justact::Authored>::AuthorId: ToOwned,
+    <<SA::Message as justact::Identifiable>::Id as ToOwned>::Owned: Eq + Hash,
+{
+    let basis: justact::Agreement<SA::Message, SA::Timestamp> = basis.into();
+    let mut just: justact::MessageSet<SA::Message> = just.into();
+
+    // Inject the message into the justification
+    <justact::MessageSet<SA::Message> as justact::InfallibleMapSync<SA::Message>>::add(&mut just, basis.message.clone());
+
+    // Now create the action
+    SA::new((String::new(), id), actor_id.into(), basis, just)
+}
+
 
 
 
@@ -94,6 +137,7 @@ pub enum Agent {
     Amy(Amy),
     Dan(Dan),
     StAntonius(StAntonius),
+    Surf(Surf),
 }
 impl justact::Identifiable for Agent {
     type Id = str;
@@ -105,6 +149,7 @@ impl justact::Identifiable for Agent {
             Self::Amy(a) => a.id(),
             Self::Dan(d) => d.id(),
             Self::StAntonius(s) => s.id(),
+            Self::Surf(s) => s.id(),
         }
     }
 }
@@ -126,6 +171,7 @@ impl justact::Agent<(String, u32), (String, u32), str, u64> for Agent {
             Self::Amy(a) => a.poll(view).map_err(Error::Amy),
             Self::Dan(d) => d.poll(view).map_err(Error::Dan),
             Self::StAntonius(s) => s.poll(view).map_err(Error::StAntonius),
+            Self::Surf(s) => s.poll(view).map_err(Error::Surf),
         }
     }
 }
@@ -144,4 +190,8 @@ impl From<Dan> for Agent {
 impl From<StAntonius> for Agent {
     #[inline]
     fn from(value: StAntonius) -> Self { Self::StAntonius(value) }
+}
+impl From<Surf> for Agent {
+    #[inline]
+    fn from(value: Surf) -> Self { Self::Surf(value) }
 }
