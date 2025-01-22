@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    21 Jan 2025, 17:18:26
+//    22 Jan 2025, 09:29:35
 //  Auto updated?
 //    Yes
 //
@@ -104,7 +104,7 @@ impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
                 }
 
                 // Done, other agents can have a go (as long as the target isn't enacted yet!)
-                let target_id: (String, u32) = (super::st_antonius::ID.into(), 1);
+                let target_id: (String, u32) = (super::amy::ID.into(), 1);
                 if view.enacted.contains_key(&target_id).cast()? { Ok(ControlFlow::Break(())) } else { Ok(ControlFlow::Continue(())) }
             },
         }

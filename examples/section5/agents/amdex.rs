@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:22:02
 //  Last edited:
-//    21 Jan 2025, 17:12:15
+//    22 Jan 2025, 09:12:36
 //  Auto updated?
 //    Yes
 //
@@ -81,11 +81,13 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
         match view.stated.contains_key(&id) {
             Ok(true) => Ok(Poll::Ready(())),
             Ok(false) => {
+                // Push the message
+                view.stated.add(Selector::All, create_message(id.1, id.0, include_str!("../slick/amdex_1.slick"))).cast()?;
+
                 // Make the "container" available
                 self.handle.write(((self.id().into(), "utils".into()), "entry-count".into()), b"super_clever_code();").cast()?;
 
-                // Push the message
-                view.stated.add(Selector::All, create_message(id.1, id.0, include_str!("../slick/amdex_1.slick"))).cast()?;
+                // Done
                 Ok(Poll::Ready(()))
             },
             Err(err) => Err(Error::new(err)),

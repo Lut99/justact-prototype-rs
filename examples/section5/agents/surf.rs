@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 14:23:12
 //  Last edited:
-//    21 Jan 2025, 14:24:57
+//    22 Jan 2025, 09:10:08
 //  Auto updated?
 //    Yes
 //
@@ -40,7 +40,7 @@ pub const ID: &'static str = "surf";
 /***** LIBRARY *****/
 /// The `surf`-agent from section 5.4.1.
 pub struct Surf {
-    handle: ScopedStoreHandle,
+    _handle: ScopedStoreHandle,
 }
 impl Surf {
     /// Constructor for the `surf` agent.
@@ -53,7 +53,7 @@ impl Surf {
     /// # Returns
     /// A new Surf agent.
     #[inline]
-    pub fn new(handle: &StoreHandle) -> Self { Self { handle: handle.scope(ID) } }
+    pub fn new(handle: &StoreHandle) -> Self { Self { _handle: handle.scope(ID) } }
 }
 impl Identifiable for Surf {
     type Id = str;

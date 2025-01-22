@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 17:45:04
 //  Last edited:
-//    21 Jan 2025, 17:14:46
+//    22 Jan 2025, 09:29:17
 //  Auto updated?
 //    Yes
 //
@@ -43,12 +43,15 @@ pub const ID: &'static str = "st-antonius";
 /// The St. Antonius' state throughout section 5.4.1.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum State {
-    /// We're trying to publish `(st-antonius 1)`
-    FirstMessage,
-    /// We're trying to publish our to-be-enacted message `(st-antonius 2)`
-    SecondMessage,
+    /// We're trying to publish `(st-antonius 1)`, i.e., publishing our dataset.
+    PublishDataset,
+    /// We're trying to publish our to-be-enacted message `(st-antonius 2)`, i.e., doing Amy's
+    /// task.
+    ExecuteAmysTask,
     /// We're trying to enact.
-    Enact,
+    EnactExecuteAmysTask,
+    /// We're going to permit Amy to download.
+    AuthoriseDownload,
 }
 
 
@@ -72,7 +75,7 @@ impl StAntonius {
     /// # Returns
     /// A new StAntonius agent.
     #[inline]
-    pub fn new(handle: &StoreHandle) -> Self { Self { state: State::FirstMessage, handle: handle.scope(ID) } }
+    pub fn new(handle: &StoreHandle) -> Self { Self { state: State::PublishDataset, handle: handle.scope(ID) } }
 }
 impl Identifiable for StAntonius {
     type Id = str;
@@ -94,32 +97,36 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
     {
         // A little state machine with three state:
         match self.state {
-            State::FirstMessage => {
+            State::PublishDataset => {
                 // The St. Antonius publishes their authorization only after Amy has published
                 let target_id: (String, u32) = (super::amy::ID.into(), 1);
                 if view.stated.contains_key(&target_id).cast()? {
                     // Publish ours
+                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
+
+                    // ...and mirror the effect on the data plane
                     self.handle
                         .write(((self.id().into(), "patients-2024".into()), "patients".into()), b"billy bob jones\ncharlie brown\nanakin skywalker")
                         .cast()?;
-                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
-                    self.state = State::SecondMessage;
+
+                    // Done, move to the next state
+                    self.state = State::ExecuteAmysTask;
                 }
                 Ok(Poll::Pending)
             },
 
-            State::SecondMessage => {
+            State::ExecuteAmysTask => {
                 // The St. Antonius publishes the fact they've done work sometime after surf published
                 let target_id: (String, u32) = (super::surf::ID.into(), 1);
                 if view.stated.contains_key(&target_id).cast()? {
                     // Publish ours
                     view.stated.add(Selector::All, create_message(2, self.id(), include_str!("../slick/st-antonius_2.slick"))).cast()?;
-                    self.state = State::Enact;
+                    self.state = State::EnactExecuteAmysTask;
                 }
                 Ok(Poll::Pending)
             },
 
-            State::Enact => {
+            State::EnactExecuteAmysTask => {
                 // Else, the enactment: enact action antonius 2 when the desired agreement exists and its time is current...
                 let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
                 let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
@@ -142,6 +149,9 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                 }
 
                 // Now we're confident all messages are there, too; enact!
+                view.enacted.add(Selector::All, create_action(1, self.id(), agree.clone(), just)).cast()?;
+
+                // Then update the data plane
                 self.handle.read(&((super::amdex::ID.into(), "utils".into()), "entry-count".into())).cast()?;
                 let patients: Option<Vec<u8>> = self.handle.read(&((self.id().into(), "patients-2024".into()), "patients".into())).cast()?;
                 self.handle
@@ -150,8 +160,22 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                         patients.map(|p| String::from_utf8_lossy(&p).lines().count()).unwrap_or(0).to_string().as_bytes(),
                     )
                     .cast()?;
-                view.enacted.add(Selector::All, create_action(1, self.id(), agree.clone(), just)).cast()?;
-                return Ok(Poll::Ready(()));
+
+                // Done
+                self.state = State::AuthoriseDownload;
+                Ok(Poll::Pending)
+            },
+
+            State::AuthoriseDownload => {
+                // Wait for Amy's message wanting to do the download appears
+                let target_id: (String, u32) = (super::amy::ID.into(), 2);
+                if view.stated.contains_key(&target_id).cast()? {
+                    // It's there, publish our auth
+                    view.stated.add(Selector::All, create_message(3, self.id(), include_str!("../slick/st-antonius_3.slick"))).cast()?;
+                    Ok(Poll::Ready(()))
+                } else {
+                    Ok(Poll::Pending)
+                }
             },
         }
     }

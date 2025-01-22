@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    21 Jan 2025, 17:23:49
+//    22 Jan 2025, 09:42:19
 //  Auto updated?
 //    Yes
 //
@@ -14,7 +14,7 @@
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -28,7 +28,7 @@ use justact::collections::map::InfallibleMap;
 use justact::collections::set::InfallibleSet;
 use justact::policies::Policy as _;
 use justact_prototype::io::{Trace, TraceDataplane, TraceJustAct};
-use justact_prototype::policy::slick::{AffectorAtom, Denotation, Effect, Extractor, GroundAtom, PatternAtom, Text as SlickText};
+use justact_prototype::policy::slick::{AffectorAtom, Denotation, Effect, Extractor, GroundAtom, PatternAtom, SyntaxError, Text as SlickText};
 use justact_prototype::wire::Message;
 use log::{debug, error};
 use parking_lot::{Mutex, MutexGuard};
@@ -182,6 +182,9 @@ struct State {
     traces_state: ListState,
     /// The currently opened trace.
     traces_opened: Option<usize>,
+
+    /// A cache for computed denotations of actions.
+    denot_cache: HashMap<(String, u32), Result<(Denotation, Text<'static>), SyntaxError>>,
 }
 impl State {
     /// Constructor for the State that initializes it to default.
@@ -193,7 +196,16 @@ impl State {
     /// # Returns
     /// A new State reading for state'ing.
     fn new(errors: Arc<Mutex<VecDeque<Error>>>, traces: Arc<Mutex<Vec<Trace<'static>>>>) -> Self {
-        Self { window: Window::Main, errors, traces, focus: Focus::List, traces_state: ListState::default(), traces_opened: None }
+        Self {
+            window: Window::Main,
+            errors,
+            traces,
+            focus: Focus::List,
+            traces_state: ListState::default(),
+            traces_opened: None,
+
+            denot_cache: HashMap::with_capacity(4),
+        }
     }
 
     /// Returns a [`StateGuard`] which has locks to the internal queue of errors and buffer of
@@ -210,6 +222,7 @@ impl State {
             traces: self.traces.lock(),
             traces_state: &mut self.traces_state,
             traces_opened: &mut self.traces_opened,
+            denot_cache: &mut self.denot_cache,
         }
     }
 }
@@ -228,6 +241,9 @@ struct StateGuard<'s> {
     traces_state: &'s mut ListState,
     /// The currently opened trace.
     traces_opened: &'s mut Option<usize>,
+
+    /// A cache for computed denotations of actions.
+    denot_cache: &'s mut HashMap<(String, u32), Result<(Denotation, Text<'static>), SyntaxError>>,
 }
 
 
@@ -386,12 +402,73 @@ impl<'s> StateGuard<'s> {
                     text
                 },
                 TraceJustAct::EnactAction { who, to: _, action } => {
+                    // Before we render, update the denotation cache
+                    let denot: Result<&Denotation, _> = match self.denot_cache.get(&action.id) {
+                        Some(res) => res.as_ref().map(|(d, _)| d),
+                        None => {
+                            // Compute the denotation (with a usecase-specific effect pattern)
+                            let denot: Result<Denotation, _> =
+                                Extractor.extract_with_actor(action.actor_id(), &action.justification).map(|mut pol| {
+                                    pol.update_effect_pattern(
+                                        PatternAtom::Tuple(vec![
+                                            PatternAtom::Variable(SlickText::from_str("Worker")),
+                                            PatternAtom::ConstantSet(vec![SlickText::from_str("reads"), SlickText::from_str("writes")]),
+                                            PatternAtom::Variable(SlickText::from_str("Variable")),
+                                        ]),
+                                        AffectorAtom::Variable(SlickText::from_str("Worker")),
+                                    );
+                                    pol.truths()
+                                });
+
+                            // Then we serialize the denotation into a `Text` of effects, already ordered by error
+                            let denot = denot.map(|d| {
+                                let mut truths: Vec<(bool, String)> = <Denotation as InfallibleSet<GroundAtom>>::iter(&d)
+                                    .map(|t| {
+                                        (
+                                            match t {
+                                                GroundAtom::Constant(t) if format!("{t:?}") == "error" => true,
+                                                GroundAtom::Tuple(ts) if !ts.is_empty() && format!("{:?}", ts[0]) == "error" => true,
+                                                _ => false,
+                                            },
+                                            format!("{t:?}"),
+                                        )
+                                    })
+                                    .collect();
+                                truths.sort_by(|lhs, rhs| match (lhs.0, rhs.0) {
+                                    (true, false) => Ordering::Less,
+                                    (false, true) => Ordering::Greater,
+                                    (true, true) | (false, false) => lhs.1.cmp(&rhs.1),
+                                });
+                                (
+                                    d,
+                                    Text::from(
+                                        truths
+                                            .into_iter()
+                                            .map(|(is_err, line)| if is_err { Line::from(line).bold().red() } else { Line::from(line) })
+                                            .collect::<Vec<Line>>(),
+                                    ),
+                                )
+                            });
+
+                            // Cache it
+                            self.denot_cache.insert(action.id.clone(), denot);
+                            self.denot_cache.get(&action.id).unwrap().as_ref().map(|(d, _)| d)
+                        },
+                    };
+
+                    // Then render
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from("[JUSTACT]").italic());
                     text.push_span(" Agent ");
                     text.push_span(Span::from(format!("{who}")).bold());
                     text.push_span(" enacted action ");
                     text.push_span(Span::from(format!("\"{} {}\"", action.id.0, action.id.1)).yellow());
+                    text.push_span(" ");
+                    text.push_span(if denot.map(|d| d.is_valid()).unwrap_or(false) {
+                        Span::from("✓").bold().green()
+                    } else {
+                        Span::from("✘").bold().red()
+                    });
                     text
                 },
                 TraceJustAct::StateMessage { who, to: _, msg } => {
@@ -501,44 +578,8 @@ impl<'s> StateGuard<'s> {
                     },
                     TraceJustAct::EnactAction { who, to, action } => {
                         // Prepare the layout
-                        let denot: Result<Denotation, _> = Extractor.extract_with_actor(action.actor_id(), &action.justification).map(|mut pol| {
-                            pol.update_effect_pattern(
-                                PatternAtom::Tuple(vec![
-                                    PatternAtom::Variable(SlickText::from_str("Worker")),
-                                    PatternAtom::ConstantSet(vec![SlickText::from_str("reads"), SlickText::from_str("writes")]),
-                                    PatternAtom::Variable(SlickText::from_str("Variable")),
-                                ]),
-                                AffectorAtom::Variable(SlickText::from_str("Worker")),
-                            );
-                            pol.truths()
-                        });
-                        let denot = denot.map(|d| {
-                            let mut truths: Vec<(bool, String)> = <Denotation as InfallibleSet<GroundAtom>>::iter(&d)
-                                .map(|t| {
-                                    (
-                                        match t {
-                                            GroundAtom::Constant(t) if format!("{t:?}") == "error" => true,
-                                            GroundAtom::Tuple(ts) if !ts.is_empty() && format!("{:?}", ts[0]) == "error" => true,
-                                            _ => false,
-                                        },
-                                        format!("{t:?}"),
-                                    )
-                                })
-                                .collect();
-                            truths.sort_by(|lhs, rhs| match (lhs.0, rhs.0) {
-                                (true, false) => Ordering::Less,
-                                (false, true) => Ordering::Greater,
-                                (true, true) | (false, false) => lhs.1.cmp(&rhs.1),
-                            });
-                            (
-                                d,
-                                Text::from(
-                                    truths
-                                        .into_iter()
-                                        .map(|(is_err, line)| if is_err { Line::from(line).bold().red() } else { Line::from(line) })
-                                        .collect::<Vec<Line>>(),
-                                ),
-                            )
+                        let denot: &Result<(Denotation, Text<'static>), _> = self.denot_cache.get(&action.id).unwrap_or_else(|| {
+                            panic!("Failed to find action \"{} {}\" in denotation cache after list construction!", action.id.0, action.id.1)
                         });
                         let vrects = Layout::vertical(
                             [Constraint::Length(1); 13]
@@ -691,7 +732,7 @@ impl<'s> StateGuard<'s> {
 
                                 // Finally, the denotation
                                 frame.render_widget(
-                                    Paragraph::new(truths).block(Block::bordered().title("Denotation").fg(right_color)).fg(right_color),
+                                    Paragraph::new(truths.clone()).block(Block::bordered().title("Denotation").fg(right_color)).fg(right_color),
                                     vrects[i],
                                 );
                             },
