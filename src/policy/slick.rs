@@ -4,7 +4,7 @@
 //  Created:
 //    19 Dec 2024, 12:09:23
 //  Last edited:
-//    21 Jan 2025, 16:51:31
+//    22 Jan 2025, 13:41:48
 //  Auto updated?
 //    Yes
 //
@@ -252,7 +252,6 @@ impl Denotation {
     /// True if the parent policy is valid, false otherwise.
     pub fn is_valid(&self) -> bool {
         // Check whether error is true in the truths
-        let atom = GroundAtom::Constant(Text::from_str("error"));
         for fact in <Denotation as justact::InfallibleSet<GroundAtom>>::iter(self) {
             match fact {
                 GroundAtom::Constant(c) => {
@@ -260,11 +259,7 @@ impl Denotation {
                         return false;
                     }
                 },
-                GroundAtom::Tuple(t) => {
-                    if t.len() >= 1 && t[0] == atom {
-                        return false;
-                    }
-                },
+                GroundAtom::Tuple(_) => continue,
             }
         }
         true

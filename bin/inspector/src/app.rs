@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    22 Jan 2025, 09:42:19
+//    22 Jan 2025, 17:40:52
 //  Auto updated?
 //    Yes
 //
@@ -44,6 +44,7 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 
 use crate::trace::TraceIter;
+use crate::widgets::scroll_area::{ScrollArea, ScrollState};
 
 
 /***** ERRORS *****/
@@ -72,6 +73,26 @@ pub enum Error {
 
 
 /***** HELPER FUNCTIONS *****/
+/// Will either wait on the given channel, or, if it's closed, wait indefinitely.
+///
+/// We do this because, otherwise, when the trace reading thread is closed, it will start
+/// triggering redraws every CPU cycle instead of only on user events. Which is a waste.
+///
+/// # Arguments
+/// - `channel`: The [`Receiver`] to wait for.
+///
+/// # Returns
+/// [`Some(())`] if some message was received on the channel, or else [`None`].
+///
+/// Note this function NEVER returns if both [`channel.is_empty()`](Receiver::is_empty()) and
+/// [`channel.is_closed()`](Receiver::is_closed()) are true.
+#[inline]
+async fn wait_for_event_or_forever(channel: &mut Receiver<()>) -> Option<()> {
+    if !channel.is_empty() || !channel.is_closed() { channel.recv().await } else { std::future::pending().await }
+}
+
+
+
 /// Centers an area for something.
 ///
 /// # Arguments
@@ -182,6 +203,10 @@ struct State {
     traces_state: ListState,
     /// The currently opened trace.
     traces_opened: Option<usize>,
+    /// The horizontal scroll state of the right pane.
+    right_hscroll: ScrollState,
+    /// The vertical scroll state of the right pane.
+    right_vscroll: ScrollState,
 
     /// A cache for computed denotations of actions.
     denot_cache: HashMap<(String, u32), Result<(Denotation, Text<'static>), SyntaxError>>,
@@ -203,6 +228,8 @@ impl State {
             focus: Focus::List,
             traces_state: ListState::default(),
             traces_opened: None,
+            right_hscroll: ScrollState::default(),
+            right_vscroll: ScrollState::default(),
 
             denot_cache: HashMap::with_capacity(4),
         }
@@ -222,6 +249,9 @@ impl State {
             traces: self.traces.lock(),
             traces_state: &mut self.traces_state,
             traces_opened: &mut self.traces_opened,
+            right_hscroll: &mut self.right_hscroll,
+            right_vscroll: &mut self.right_vscroll,
+
             denot_cache: &mut self.denot_cache,
         }
     }
@@ -241,6 +271,10 @@ struct StateGuard<'s> {
     traces_state: &'s mut ListState,
     /// The currently opened trace.
     traces_opened: &'s mut Option<usize>,
+    /// The horizontal scroll state of the right pane.
+    right_hscroll: &'s mut ScrollState,
+    /// The vertical scroll state of the right pane.
+    right_vscroll: &'s mut ScrollState,
 
     /// A cache for computed denotations of actions.
     denot_cache: &'s mut HashMap<(String, u32), Result<(Denotation, Text<'static>), SyntaxError>>,
@@ -342,8 +376,8 @@ impl App {
                 },
 
                 // The one that is used by the thread to trigger a redraw
-                _ = self.receiver.recv() => {},
-            };
+                _ = wait_for_event_or_forever(&mut self.receiver) => {},
+            }
         }
     }
 }
@@ -382,13 +416,15 @@ impl<'s> StateGuard<'s> {
 
 
         // Traces (left plane)
+        let max_trace_width: usize = (self.traces.len().checked_ilog10().unwrap_or(0) + 1) as usize;
         let body_rects =
             Layout::horizontal(if self.traces_opened.is_some() { [Constraint::Fill(1); 2].as_slice() } else { [Constraint::Fill(1); 1].as_slice() })
                 .split(vrects[1]);
-        let titles = self.traces.iter().map(|t| match t {
+        let titles = self.traces.iter().enumerate().map(|(i, t)| match t {
             Trace::JustAct(t) => match t {
                 TraceJustAct::AddAgreement { agree } => {
                     let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[JUSTACT]").italic());
                     text.push_span(" Published agreement ");
                     text.push_span(Span::from(format!("\"{} {}\"", agree.message.id.0, agree.message.id.1)).green());
@@ -396,6 +432,7 @@ impl<'s> StateGuard<'s> {
                 },
                 TraceJustAct::AdvanceTime { timestamp } => {
                     let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[JUSTACT]").italic());
                     text.push_span(" Advanced to time ");
                     text.push_span(Span::from(format!("{timestamp}")).cyan());
@@ -458,6 +495,7 @@ impl<'s> StateGuard<'s> {
 
                     // Then render
                     let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[JUSTACT]").italic());
                     text.push_span(" Agent ");
                     text.push_span(Span::from(format!("{who}")).bold());
@@ -467,12 +505,13 @@ impl<'s> StateGuard<'s> {
                     text.push_span(if denot.map(|d| d.is_valid()).unwrap_or(false) {
                         Span::from("✓").bold().green()
                     } else {
-                        Span::from("✘").bold().red()
+                        Span::from("✘").bold().white().on_red()
                     });
                     text
                 },
                 TraceJustAct::StateMessage { who, to: _, msg } => {
                     let mut text = Text::default().fg(left_color);
+                    text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[JUSTACT]").italic());
                     text.push_span(" Agent ");
                     text.push_span(Span::from(format!("{who}")).bold());
@@ -483,22 +522,28 @@ impl<'s> StateGuard<'s> {
             },
 
             Trace::Dataplane(t) => match t {
-                TraceDataplane::Read { who, id, contents: _ } => {
+                TraceDataplane::Read { who, id, contents } => {
                     let mut text = Text::default().fg(left_color);
-                    text.push_span(Span::from("[DATAPLN]").italic().black().on_white());
+                    text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
+                    text.push_span(Span::from("[DATAPLN]").italic().black().bg(left_color));
                     text.push_span(" Agent ");
                     text.push_span(Span::from(format!("{who}")).bold());
                     text.push_span(" read variable ");
-                    text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).green());
+                    text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).bold().dark_gray());
+                    if contents.is_none() {
+                        text.push_span(" ");
+                        text.push_span(Span::from("!!!").white().on_red());
+                    }
                     text
                 },
                 TraceDataplane::Write { who, id, new, contents: _ } => {
                     let mut text = Text::default().fg(left_color);
-                    text.push_span(Span::from("[DATAPLN]").italic().black().on_white());
+                    text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
+                    text.push_span(Span::from("[DATAPLN]").italic().black().bg(left_color));
                     text.push_span(" Agent ");
                     text.push_span(Span::from(format!("{who}")).bold());
                     text.push_span(format!(" wrote to{} variable ", if *new { " new" } else { "" }));
-                    text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).green());
+                    text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).bold().dark_gray());
                     text
                 },
             },
@@ -731,9 +776,15 @@ impl<'s> StateGuard<'s> {
                                 i += 1;
 
                                 // Finally, the denotation
-                                frame.render_widget(
-                                    Paragraph::new(truths.clone()).block(Block::bordered().title("Denotation").fg(right_color)).fg(right_color),
+                                frame.render_stateful_widget(
+                                    ScrollArea::new(
+                                        Paragraph::new(truths.clone())
+                                            .block(Block::bordered().title("Justification truths").fg(right_color))
+                                            .fg(right_color),
+                                        (2 + truths.width() as u16, 2 + truths.height() as u16),
+                                    ),
                                     vrects[i],
+                                    &mut self.right_hscroll,
                                 );
                             },
                             Err(err) => todo!(),
@@ -829,7 +880,8 @@ impl<'s> StateGuard<'s> {
                                 let mut text = Text::from("Variable : ");
                                 text.push_span(Span::from(format!("({} {}) {}", id.0.0, id.0.1, id.1)).bold());
                                 if contents.is_none() {
-                                    text.push_span(Span::from(" NON-EXISTING!!!").bold().white().on_red());
+                                    text.push_span(" ");
+                                    text.push_span(Span::from("NON-EXISTING!!!").bold().white().on_red());
                                 }
                                 text
                             })
@@ -869,7 +921,8 @@ impl<'s> StateGuard<'s> {
                                 let mut text = Text::from("Variable : ");
                                 text.push_span(Span::from(format!("({} {}) {}", id.0.0, id.0.1, id.1)).bold());
                                 if *new {
-                                    text.push_span(Span::from(" (NEW)").bold().cyan());
+                                    text.push_span(" ");
+                                    text.push_span(Span::from("(NEW)").bold().cyan());
                                 }
                                 text
                             })
@@ -964,6 +1017,8 @@ impl<'s> StateGuard<'s> {
                     // Make the currently selected one, opened
                     *self.traces_opened = self.traces_state.selected();
                     *self.focus = Focus::Trace;
+                    self.right_hscroll.reset();
+                    self.right_vscroll.reset();
                 }
                 Ok(ControlFlow::Continue(()))
             },
@@ -978,7 +1033,14 @@ impl<'s> StateGuard<'s> {
                     // Also update the opened one if any
                     if self.traces_opened.is_some() {
                         *self.traces_opened = self.traces_state.selected();
+                        self.right_hscroll.reset();
+                        self.right_vscroll.reset();
+                        if self.traces_opened.is_none() {
+                            *self.focus = Focus::List;
+                        }
                     }
+                } else if *self.focus == Focus::Trace {
+                    self.right_vscroll.scroll_up();
                 }
                 Ok(ControlFlow::Continue(()))
             },
@@ -993,10 +1055,26 @@ impl<'s> StateGuard<'s> {
                     // Also update the opened one if any
                     if self.traces_opened.is_some() {
                         *self.traces_opened = self.traces_state.selected();
+                        self.right_hscroll.reset();
+                        self.right_vscroll.reset();
                         if self.traces_opened.is_none() {
                             *self.focus = Focus::List;
                         }
                     }
+                } else if *self.focus == Focus::Trace {
+                    self.right_vscroll.scroll_down();
+                }
+                Ok(ControlFlow::Continue(()))
+            },
+            Event::Key(KeyEvent { code: KeyCode::Left, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+                if *self.focus == Focus::Trace {
+                    self.right_hscroll.scroll_left();
+                }
+                Ok(ControlFlow::Continue(()))
+            },
+            Event::Key(KeyEvent { code: KeyCode::Right, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+                if *self.focus == Focus::Trace {
+                    self.right_hscroll.scroll_right();
                 }
                 Ok(ControlFlow::Continue(()))
             },

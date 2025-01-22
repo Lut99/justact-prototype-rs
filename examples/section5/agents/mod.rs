@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:50:19
 //  Last edited:
-//    21 Jan 2025, 14:43:18
+//    22 Jan 2025, 17:03:56
 //  Auto updated?
 //    Yes
 //
@@ -15,6 +15,7 @@
 // Declare the agent modules
 pub mod amdex;
 pub mod amy;
+pub mod bob;
 pub mod consortium;
 pub mod dan;
 pub mod st_antonius;
@@ -26,6 +27,7 @@ use std::task::Poll;
 
 pub use amdex::Amdex;
 pub use amy::Amy;
+pub use bob::Bob;
 pub use consortium::Consortium;
 pub use dan::Dan;
 pub use st_antonius::StAntonius;
@@ -53,6 +55,9 @@ pub enum Error {
     /// The `amy` agent failed.
     #[error("The `amy`-agent failed")]
     Amy(#[source] amy::Error),
+    /// The `bob` agent failed.
+    #[error("The `bob`-agent failed")]
+    Bob(#[source] bob::Error),
     /// The `dan` agent failed.
     #[error("The `dan`-agent failed")]
     Dan(#[source] dan::Error),
@@ -130,11 +135,28 @@ where
 
 
 
+/***** AUXILLARY *****/
+/// Defines which script agents will execute.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Script {
+    /// The first example, that of section 5.4.1.
+    #[allow(unused)]
+    Section5_4_1,
+    /// The second example, that of section 5.4.2.
+    #[allow(unused)]
+    Section5_4_2,
+}
+
+
+
+
+
 /***** LIBRARY *****/
 /// Super-agent abstracting over the individual agents.
 pub enum Agent {
     Amdex(Amdex),
     Amy(Amy),
+    Bob(Bob),
     Dan(Dan),
     StAntonius(StAntonius),
     Surf(Surf),
@@ -147,6 +169,7 @@ impl justact::Identifiable for Agent {
         match self {
             Self::Amdex(a) => a.id(),
             Self::Amy(a) => a.id(),
+            Self::Bob(b) => b.id(),
             Self::Dan(d) => d.id(),
             Self::StAntonius(s) => s.id(),
             Self::Surf(s) => s.id(),
@@ -169,6 +192,7 @@ impl justact::Agent<(String, u32), (String, u32), str, u64> for Agent {
         match self {
             Self::Amdex(a) => a.poll(view).map_err(Error::Amdex),
             Self::Amy(a) => a.poll(view).map_err(Error::Amy),
+            Self::Bob(b) => b.poll(view).map_err(Error::Bob),
             Self::Dan(d) => d.poll(view).map_err(Error::Dan),
             Self::StAntonius(s) => s.poll(view).map_err(Error::StAntonius),
             Self::Surf(s) => s.poll(view).map_err(Error::Surf),
@@ -182,6 +206,10 @@ impl From<Amdex> for Agent {
 impl From<Amy> for Agent {
     #[inline]
     fn from(value: Amy) -> Self { Self::Amy(value) }
+}
+impl From<Bob> for Agent {
+    #[inline]
+    fn from(value: Bob) -> Self { Self::Bob(value) }
 }
 impl From<Dan> for Agent {
     #[inline]

@@ -1,4 +1,5 @@
 // Statement ( consortium 1) ...
+error if error _.
 error (illegal (Fact within Msg1) within Msg2) if (Fact within Msg1) within Msg2.
 error (illegal (actor Agent) within Msg2) if (actor Agent) within Msg2.
 Sayer says Fact if Fact within (Sayer M) and diff { (consortium 1) (Sayer M) }.

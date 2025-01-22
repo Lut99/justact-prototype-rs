@@ -1,16 +1,15 @@
-//  AMDEX.rs
+//  BOB.rs
 //    by Lut99
 //
 //  Created:
-//    15 Jan 2025, 15:22:02
+//    22 Jan 2025, 11:04:07
 //  Last edited:
-//    22 Jan 2025, 17:09:03
+//    22 Jan 2025, 17:12:15
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Describes the behaviour of the `amdex` agent as introduced in
-//!   section 5.4.1 in the paper \[1\].
+//!   Implements the Bob agent for section 5.4.2.
 //
 
 use std::task::Poll;
@@ -32,20 +31,20 @@ use crate::error::ResultToError as _;
 
 /***** CONSTANTS *****/
 /// This agent's ID.
-pub const ID: &'static str = "amdex";
+pub const ID: &'static str = "bob";
 
 
 
 
 
 /***** LIBRARY *****/
-/// The `amdex`-agent from section 5.4.1.
-pub struct Amdex {
+/// The `bob`-agent from section 5.4.1.
+pub struct Bob {
     script: Script,
     handle: ScopedStoreHandle,
 }
-impl Amdex {
-    /// Constructor for the `amdex` agent.
+impl Bob {
+    /// Constructor for the `bob` agent.
     ///
     /// # Arguments
     /// - `script`: A [`Script`] describing what Amy will do.
@@ -54,17 +53,18 @@ impl Amdex {
     ///   dataplane handle can be dropped.
     ///
     /// # Returns
-    /// A new Amdex agent.
+    /// A new Bob agent.
     #[inline]
+    #[allow(unused)]
     pub fn new(script: Script, handle: &StoreHandle) -> Self { Self { script, handle: handle.scope(ID) } }
 }
-impl Identifiable for Amdex {
+impl Identifiable for Bob {
     type Id = str;
 
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
+impl Agent<(String, u32), (String, u32), str, u64> for Bob {
     type Error = Error;
 
     #[inline]
@@ -80,27 +80,22 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
     {
         // Decide which script to execute
         match self.script {
-            Script::Section5_4_1 => {
-                // The AMdEX agent can publish immediately, it doesn't yet need the agreement for just
-                // stating.
-                let id: (String, u32) = (self.id().into(), 1);
-                match view.stated.contains_key(&id) {
-                    Ok(true) => Ok(Poll::Ready(())),
-                    Ok(false) => {
-                        // Push the message
-                        view.stated.add(Selector::All, create_message(id.1, id.0, include_str!("../slick/amdex_1.slick"))).cast()?;
+            // Bob doesn't participate in the first example.
+            Script::Section5_4_1 => unreachable!(),
 
-                        // Make the "container" available
-                        self.handle.write(((self.id().into(), "utils".into()), "entry-count".into()), b"super_clever_code();").cast()?;
+            Script::Section5_4_2 => {
+                // Bob publishes their statement like, right away, even though he can't deliver on
+                // executing step 4 yet.
+                view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/bob_1.slick"))).cast()?;
 
-                        // Done
-                        Ok(Poll::Ready(()))
-                    },
-                    Err(err) => Err(Error::new(err)),
-                }
+                // Let's write the result of the first step. Bob can do that already.
+                self.handle
+                    .write(((self.id().into(), "step1".into()), "filter-consented".into()), b"code_that_actually_filters_consent_wowie();")
+                    .cast()?;
+
+                // Done
+                Ok(Poll::Ready(()))
             },
-
-            Script::Section5_4_2 => Ok(Poll::Ready(())),
         }
     }
 }

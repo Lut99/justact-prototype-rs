@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 11:01:12
 //  Last edited:
-//    21 Jan 2025, 17:00:11
+//    22 Jan 2025, 11:00:50
 //  Auto updated?
 //    Yes
 //
@@ -58,6 +58,19 @@ impl Clone for ScopedStoreHandle {
 
 // Operations
 impl ScopedStoreHandle {
+    /// Checks if a given variable has a value associated with it.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier (as a prefixed-by-author name) of the variable to check.
+    ///
+    /// # Returns
+    /// True if the function exists, or false otherwise.
+    #[inline]
+    #[track_caller]
+    pub fn exists(&self, id: &((String, String), String)) -> bool { self.handle.exists(id) }
+
+
+
     /// Reads the contents of a variable.
     ///
     /// Note that this returns the complete contents of the variable.
@@ -135,6 +148,19 @@ impl StoreHandle {
 
 // Operations
 impl StoreHandle {
+    /// Checks if a given variable has a value associated with it.
+    ///
+    /// # Arguments
+    /// - `id`: The identifier (as a prefixed-by-author name) of the variable to check.
+    ///
+    /// # Returns
+    /// True if the function exists, or false otherwise.
+    #[inline]
+    #[track_caller]
+    pub fn exists(&self, id: &((String, String), String)) -> bool { self.0.borrow().contains_key(id) }
+
+
+
     /// Reads the contents of a variable.
     ///
     /// Note that this returns the complete contents of the variable.

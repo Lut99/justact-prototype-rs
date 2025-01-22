@@ -1,10 +1,10 @@
-//  SECTION 5. 4. 1.rs
+//  SECTION 5.4.1.rs
 //    by Lut99
 //
 //  Created:
 //    14 Jan 2025, 16:49:57
 //  Last edited:
-//    21 Jan 2025, 17:17:31
+//    22 Jan 2025, 17:02:01
 //  Auto updated?
 //    Yes
 //
@@ -17,8 +17,7 @@ mod agents;
 mod error;
 mod trace;
 
-use agents::consortium::Behaviour;
-use agents::{Agent, Amdex, Amy, Consortium, Dan, StAntonius, Surf};
+use agents::{Agent, Amdex, Amy, Consortium, Dan, Script, StAntonius, Surf};
 use clap::Parser;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
@@ -69,13 +68,13 @@ fn main() {
     // Create the agents
     let dataplane = StoreHandle::new();
     let agents: [Agent; 5] = [
-        Amdex::new(&dataplane).into(),
-        Amy::new(&dataplane).into(),
-        Dan::new(&dataplane).into(),
-        StAntonius::new(&dataplane).into(),
-        Surf::new(&dataplane).into(),
+        Amdex::new(Script::Section5_4_1, &dataplane).into(),
+        Amy::new(Script::Section5_4_1, &dataplane).into(),
+        Dan::new(Script::Section5_4_1, &dataplane).into(),
+        StAntonius::new(Script::Section5_4_1, &dataplane).into(),
+        Surf::new(Script::Section5_4_1, &dataplane).into(),
     ];
-    let sync = Consortium::new(Behaviour::Section5_4_1, &dataplane);
+    let sync = Consortium::new(Script::Section5_4_1, &dataplane);
 
     // Run the runtime!
     let mut runtime = Runtime::new();
