@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 14:23:12
 //  Last edited:
-//    22 Jan 2025, 17:27:04
+//    23 Jan 2025, 12:02:30
 //  Auto updated?
 //    Yes
 //
@@ -110,11 +110,22 @@ impl Agent<(String, u32), (String, u32), str, u64> for Surf {
             Script::Section5_4_2 => match self.state {
                 State5_4_2::Execute => {
                     // After observing Bob's message, SURF decides (and synchronizes with the others)
-                    // they can do step 2. So they do.
+                    // they can do step 2. So they do ONCE the required data is available.
                     let target_id: (String, u32) = (super::bob::ID.into(), 1);
-                    if view.stated.contains_key(&target_id).cast()? {
+                    let filter_consented_id: ((String, String), String) = ((super::bob::ID.into(), "step1".into()), "filter-consented".into());
+                    let patients_id: ((String, String), String) = ((super::st_antonius::ID.into(), "patients-2024".into()), "patients".into());
+                    if view.stated.contains_key(&target_id).cast()? && self.handle.exists(&filter_consented_id) && self.handle.exists(&patients_id) {
                         // Publish ours
-                        view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/surf_2.slick"))).cast()?;
+                        view.stated.add(Selector::All, create_message(2, self.id(), include_str!("../slick/surf_2.slick"))).cast()?;
+
+                        // We already execute our work! The justification later merely serves to prove it.
+                        let _ = self.handle.read(&filter_consented_id).cast()?;
+                        let _ = self.handle.read(&patients_id).cast()?;
+                        // Sadly, we'll emulate the execution for now.
+                        self.handle
+                            .write(((super::bob::ID.into(), "step2".into()), "consented".into()), b"billy bob jones\nanakin skywalker")
+                            .cast()?;
+
                         // Move to the next state
                         self.state = State5_4_2::EnactExecute;
                     }
@@ -132,9 +143,18 @@ impl Agent<(String, u32), (String, u32), str, u64> for Surf {
                         return Ok(Poll::Pending);
                     }
 
-                    // The target agreement is valid; check the messages!
+                    // The target agreement is valid; check the required messages!
+                    // NOTE: We will only agree once all agents stated they have/can execute it.
+                    // Otherwise, our justification will fail, because Bob's message states that
+                    // task 4 has been executed (which hasn't been without `amdex`'s involvement).
                     let mut just: MessageSet<SM> = MessageSet::new();
-                    for msg in [(super::bob::ID.into(), 1), (super::st_antonius::ID.into(), 1)] {
+                    for msg in [
+                        (super::amdex::ID.into(), 1),
+                        (super::bob::ID.into(), 1),
+                        (super::st_antonius::ID.into(), 1),
+                        (super::st_antonius::ID.into(), 4),
+                        (super::surf::ID.into(), 2),
+                    ] {
                         match view.stated.get(&msg).cast()? {
                             Some(msg) => {
                                 just.add(msg.clone());
@@ -145,12 +165,6 @@ impl Agent<(String, u32), (String, u32), str, u64> for Surf {
 
                     // We are confident everything we need is there; enact!
                     view.enacted.add(Selector::All, create_action(1, self.id(), agree.clone(), just)).cast()?;
-
-                    // Also perform the necessary reads- and writes.
-                    let _ = self.handle.read(&((super::bob::ID.into(), "step1".into()), "filter-consented".into())).cast()?;
-                    let _ = self.handle.read(&((super::st_antonius::ID.into(), "patients-2024".into()), "patients".into())).cast()?;
-                    // Sadly, we'll emulate the execution for now.
-                    self.handle.write(((super::bob::ID.into(), "step2".into()), "consented".into()), b"billy bob jones\nanakin skywalker").cast()?;
 
                     // Done!
                     Ok(Poll::Ready(()))

@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 17:45:04
 //  Last edited:
-//    22 Jan 2025, 17:32:30
+//    23 Jan 2025, 12:03:14
 //  Auto updated?
 //    Yes
 //
@@ -91,6 +91,10 @@ enum State5_4_1 {
 enum State5_4_2 {
     /// We're trying to publish `(st-antonius 1)`, i.e., publishing our dataset.
     PublishDataset,
+    /// We've observed Bob's workflow and we want to execute parts of it.
+    ExecuteBobsTask,
+    /// We want to justify our part in Bob's workflow.
+    EnactExecuteBobsTask,
 }
 
 
@@ -250,8 +254,75 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                         .cast()?;
 
                     // Done, move to the next state
-                    // self.state = State::Section5_4_1(State5_4_1::ExecuteAmysTask);
-                    // Ok(Poll::Pending)
+                    self.state = State::Section5_4_2(State5_4_2::ExecuteBobsTask);
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_2::ExecuteBobsTask => {
+                    // After observing Bob's message, St. Antonius decides (and synchronizes with
+                    // the others) they can do step 3. So they do ONCE the data is available.
+                    let target_id: (String, u32) = (super::bob::ID.into(), 1);
+                    let entry_count_id: ((String, String), String) = ((super::amdex::ID.into(), "utils".into()), "entry-count".into());
+                    let consented_id: ((String, String), String) = ((super::bob::ID.into(), "step2".into()), "consented".into());
+                    if view.stated.contains_key(&target_id).cast()? && self.handle.exists(&entry_count_id) && self.handle.exists(&consented_id) {
+                        // Publish ours
+                        view.stated.add(Selector::All, create_message(4, self.id(), include_str!("../slick/st-antonius_4.slick"))).cast()?;
+
+                        // Do the required data accesses
+                        let _ = self.handle.read(&entry_count_id).cast()?;
+                        let consented = self
+                            .handle
+                            .read(&consented_id)
+                            .cast()?
+                            .unwrap_or_else(|| panic!("Failed to get data contents even though we've checked it exists"));
+                        self.handle
+                            .write(
+                                ((super::bob::ID.into(), "step3".into()), "num-consented".into()),
+                                String::from_utf8_lossy(&consented).split('\n').count().to_string().as_bytes(),
+                            )
+                            .cast()?;
+
+                        // Move to the next state
+                        self.state = State::Section5_4_2(State5_4_2::EnactExecuteBobsTask);
+                    }
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_2::EnactExecuteBobsTask => {
+                    // Let's first wait until the consortium had its chance to publish the agreement/times
+                    let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
+                    let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
+                        Some(agree) => agree,
+                        None => return Ok(Poll::Pending),
+                    };
+                    if !view.times.current().cast()?.contains(&agree.at) {
+                        return Ok(Poll::Pending);
+                    }
+
+                    // The target agreement is valid; check the required messages!
+                    // NOTE: We will only agree once all agents stated they have/can execute it.
+                    // Otherwise, our justification will fail, because Bob's message states that
+                    // task 4 has been executed (which hasn't been without `amdex`'s involvement).
+                    let mut just: MessageSet<SM> = MessageSet::new();
+                    for msg in [
+                        (super::amdex::ID.into(), 1),
+                        (super::bob::ID.into(), 1),
+                        (super::st_antonius::ID.into(), 1),
+                        (super::st_antonius::ID.into(), 4),
+                        (super::surf::ID.into(), 2),
+                    ] {
+                        match view.stated.get(&msg).cast()? {
+                            Some(msg) => {
+                                just.add(msg.clone());
+                            },
+                            None => return Ok(Poll::Pending),
+                        }
+                    }
+
+                    // We are confident everything we need is there; enact!
+                    view.enacted.add(Selector::All, create_action(2, self.id(), agree.clone(), just)).cast()?;
+
+                    // Done!
                     Ok(Poll::Ready(()))
                 },
             },

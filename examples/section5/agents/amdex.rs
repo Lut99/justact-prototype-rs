@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:22:02
 //  Last edited:
-//    22 Jan 2025, 17:09:03
+//    23 Jan 2025, 11:48:13
 //  Auto updated?
 //    Yes
 //
@@ -80,7 +80,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
     {
         // Decide which script to execute
         match self.script {
-            Script::Section5_4_1 => {
+            Script::Section5_4_1 | Script::Section5_4_2 => {
                 // The AMdEX agent can publish immediately, it doesn't yet need the agreement for just
                 // stating.
                 let id: (String, u32) = (self.id().into(), 1);
@@ -99,8 +99,6 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
                     Err(err) => Err(Error::new(err)),
                 }
             },
-
-            Script::Section5_4_2 => Ok(Poll::Ready(())),
         }
     }
 }
