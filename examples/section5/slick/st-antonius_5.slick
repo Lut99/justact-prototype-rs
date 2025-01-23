@@ -1,0 +1,8 @@
+// Statement (st-antonius 5).
+st-antonius is highly trusted. amdex is highly trusted. surf is highly trusted.
+
+Agent is trusted if Sayer says (Agent is highly trusted)
+                 and st-antonius says (Sayer is highly trusted).
+          
+authorise Task in Msg by Worker if (Task ready) within Msg
+                                and st-antonius says (Worker is trusted).

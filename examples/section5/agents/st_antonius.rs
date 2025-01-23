@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 17:45:04
 //  Last edited:
-//    23 Jan 2025, 12:03:14
+//    23 Jan 2025, 15:09:28
 //  Auto updated?
 //    Yes
 //
@@ -19,12 +19,16 @@ use justact::actions::ConstructableAction;
 use justact::actors::{Agent, View};
 use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
-use justact::collections::Selector;
 use justact::collections::map::{InfallibleMapSync as _, Map, MapAsync};
-use justact::collections::set::InfallibleSet as _;
+use justact::collections::set::InfallibleSet;
+use justact::collections::{Selector, Singleton};
 use justact::messages::{ConstructableMessage, MessageSet};
+use justact::policies::{Extractor as _, Policy as _};
 use justact::times::Times;
 use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
+use justact_prototype::policy::slick::{Denotation as SlickDenotation, Extractor as SlickExtractor};
+use slick::GroundAtom;
+use slick::text::Text;
 
 use super::{Script, create_action, create_message};
 pub use crate::error::Error;
@@ -45,6 +49,7 @@ pub const ID: &'static str = "st-antonius";
 enum State {
     Section5_4_1(State5_4_1),
     Section5_4_2(State5_4_2),
+    Section5_4_4(State5_4_4),
 }
 impl State {
     /// Forces interpretation as a section 5.4.1 state.
@@ -69,6 +74,18 @@ impl State {
     #[inline]
     fn section5_4_2(self) -> State5_4_2 {
         if let Self::Section5_4_2(state) = self { state } else { panic!("Cannot unwrap a non-`State::Section5_4_2` as one") }
+    }
+
+    /// Forces interpretation as a section 5.4.4 state.
+    ///
+    /// # Returns
+    /// A [`State5_4_4`] describing the state for the first example.
+    ///
+    /// # Panics
+    /// This function panics if this is not for the first state.
+    #[inline]
+    fn section5_4_4(self) -> State5_4_4 {
+        if let Self::Section5_4_4(state) = self { state } else { panic!("Cannot unwrap a non-`State::Section5_4_4` as one") }
     }
 }
 
@@ -95,6 +112,17 @@ enum State5_4_2 {
     ExecuteBobsTask,
     /// We want to justify our part in Bob's workflow.
     EnactExecuteBobsTask,
+}
+
+/// The St. Antonius' state throughout section 5.4.4.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum State5_4_4 {
+    /// We're trying to publish `(st-antonius 1)`, i.e., publishing our dataset.
+    PublishDataset,
+    /// Publishing the internalized local policy.
+    InternalisedLocalPolicy,
+    /// Eventually, they _partially_ publish their further policy.
+    PatientPolicy,
 }
 
 
@@ -126,6 +154,7 @@ impl StAntonius {
             state: match script {
                 Script::Section5_4_1 => State::Section5_4_1(State5_4_1::PublishDataset),
                 Script::Section5_4_2 => State::Section5_4_2(State5_4_2::PublishDataset),
+                Script::Section5_4_4 => State::Section5_4_4(State5_4_4::PublishDataset),
             },
             handle: handle.scope(ID),
         }
@@ -323,6 +352,71 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                     view.enacted.add(Selector::All, create_action(2, self.id(), agree.clone(), just)).cast()?;
 
                     // Done!
+                    Ok(Poll::Ready(()))
+                },
+            },
+
+            Script::Section5_4_4 => match self.state.section5_4_4() {
+                State5_4_4::PublishDataset => {
+                    // The St. Antonius publishes their dataset at the start, cuz why not
+                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
+
+                    // ...and mirror the effect on the data plane
+                    self.handle
+                        .write(((self.id().into(), "patients-2024".into()), "patients".into()), b"billy bob jones\ncharlie brown\nanakin skywalker")
+                        .cast()?;
+
+                    // Done, move to the next state
+                    self.state = State::Section5_4_4(State5_4_4::InternalisedLocalPolicy);
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_4::InternalisedLocalPolicy => {
+                    // The St. Antonius can just publish this as they please
+                    view.stated.add(Selector::All, create_message(5, self.id(), include_str!("../slick/st-antonius_5.slick"))).cast()?;
+
+                    // Done, move to the next state
+                    self.state = State::Section5_4_4(State5_4_4::PatientPolicy);
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_4::PatientPolicy => {
+                    // We now publish our internal policy but ONLY to trusted agents.
+                    // Which agents are trusted? We'll read that from our previous snippet!
+                    let st_antonius_5_id: (String, u32) = (self.id().into(), 5);
+                    let trusted: Vec<String> = <SlickDenotation as InfallibleSet<GroundAtom>>::iter(
+                        &SlickExtractor.extract(&Singleton(view.stated.get(&st_antonius_5_id).cast()?.unwrap())).cast()?.truths(),
+                    )
+                    .filter_map(|g| match g {
+                        GroundAtom::Constant(_) => None,
+                        GroundAtom::Tuple(atoms) => {
+                            if atoms.len() == 4 {
+                                if let GroundAtom::Constant(first) = atoms[0] {
+                                    if atoms[1] == GroundAtom::Constant(Text::from_str("is"))
+                                        && atoms[2] == GroundAtom::Constant(Text::from_str("highly"))
+                                        && atoms[3] == GroundAtom::Constant(Text::from_str("trusted"))
+                                    {
+                                        Some(format!("{first:?}"))
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        },
+                    })
+                    .collect();
+
+                    // Now publish
+                    let msg: SM = create_message(6, self.id(), include_str!("../slick/st-antonius_6.slick"));
+                    for trustee in trusted {
+                        view.stated.add(Selector::Agent(&trustee), msg.clone()).cast()?;
+                    }
+
+                    // Done
                     Ok(Poll::Ready(()))
                 },
             },

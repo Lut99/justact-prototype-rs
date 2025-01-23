@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    22 Jan 2025, 17:08:26
+//    23 Jan 2025, 15:18:54
 //  Auto updated?
 //    Yes
 //
@@ -79,7 +79,7 @@ impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
         SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         match self.script {
-            Script::Section5_4_1 | Script::Section5_4_2 => {
+            Script::Section5_4_1 | Script::Section5_4_2 | Script::Section5_4_4 => {
                 // When no time is active yet, the consortium agent will initialize the system by bumping
                 // it to `1` and making the initial agreement active.
                 let current_times = view.times.current().cast()?;
@@ -93,9 +93,17 @@ impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
                 }
 
                 // Done, other agents can have a go (as long as the target isn't enacted yet!)
-                let target_id: (String, u32) =
-                    if self.script == Script::Section5_4_1 { (super::amy::ID.into(), 1) } else { (super::bob::ID.into(), 1) };
-                if view.enacted.contains_key(&target_id).cast()? { Ok(ControlFlow::Break(())) } else { Ok(ControlFlow::Continue(())) }
+                let target_ids: &[(String, u32)] = match self.script {
+                    Script::Section5_4_1 => &[(super::amy::ID.into(), 1)],
+                    Script::Section5_4_2 => &[(super::bob::ID.into(), 1), (super::st_antonius::ID.into(), 2), (super::surf::ID.into(), 1)],
+                    Script::Section5_4_4 => &[(super::st_antonius::ID.into(), 3)],
+                };
+                for id in target_ids {
+                    if !view.enacted.contains_key(id).cast()? {
+                        return Ok(ControlFlow::Continue(()));
+                    }
+                }
+                Ok(ControlFlow::Break(()))
             },
         }
     }

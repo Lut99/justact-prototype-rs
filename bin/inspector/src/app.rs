@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    22 Jan 2025, 17:40:52
+//    23 Jan 2025, 15:13:45
 //  Auto updated?
 //    Yes
 //
@@ -509,7 +509,7 @@ impl<'s> StateGuard<'s> {
                     });
                     text
                 },
-                TraceJustAct::StateMessage { who, to: _, msg } => {
+                TraceJustAct::StateMessage { who, to, msg } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[JUSTACT]").italic());
@@ -517,6 +517,10 @@ impl<'s> StateGuard<'s> {
                     text.push_span(Span::from(format!("{who}")).bold());
                     text.push_span(" stated message ");
                     text.push_span(Span::from(format!("\"{} {}\"", msg.id.0, msg.id.1)).red());
+                    if let Selector::Agent(a) = to {
+                        text.push_span(" to ");
+                        text.push_span(Span::from(format!("{a}")).bold());
+                    }
                     text
                 },
             },

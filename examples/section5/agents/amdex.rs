@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:22:02
 //  Last edited:
-//    23 Jan 2025, 11:48:13
+//    23 Jan 2025, 15:11:13
 //  Auto updated?
 //    Yes
 //
@@ -99,6 +99,9 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
                     Err(err) => Err(Error::new(err)),
                 }
             },
+
+            // Not involved in section 5.4.4, but present because they will receive a message from the St. Antonius
+            Script::Section5_4_4 => Ok(Poll::Ready(())),
         }
     }
 }

@@ -1,0 +1,11 @@
+// Statement (st-antonius 6).
+amy is a patient. bob is a patient. dan is a patient.
+
+trusted consent for Task in Msg if st-antonius says (Sayer is trusted)
+    and Sayer says (Patient consents to Task in Msg).
+
+Task lacks trusted consent if authorise Task in Msg by Worker via consent
+    and Patient is a patient and not trusted consent for Task in Msg.
+    
+authorise Task in Msg by Worker if Patient consents to Task in Msg
+    and Worker says (Task executed) and not Task lacks trusted consent.

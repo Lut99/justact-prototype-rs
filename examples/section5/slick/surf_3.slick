@@ -1,0 +1,4 @@
+// Statement (surf 3).
+(surf read-patients) has input ((st-antonius patients-2024) patients).
+(surf read-patients) ready.
+(surf read-patients) executed.

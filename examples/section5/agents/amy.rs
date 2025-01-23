@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 15:11:36
 //  Last edited:
-//    22 Jan 2025, 17:03:46
+//    23 Jan 2025, 13:19:14
 //  Auto updated?
 //    Yes
 //
@@ -190,8 +190,8 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amy {
                 }
             },
 
-            // Amy doesn't participate in the second example
-            Script::Section5_4_2 => unreachable!(),
+            // Amy doesn't participate in the second nor fourth example
+            Script::Section5_4_2 | Script::Section5_4_4 => unreachable!(),
         }
     }
 }

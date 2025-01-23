@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 14:23:12
 //  Last edited:
-//    23 Jan 2025, 12:02:30
+//    23 Jan 2025, 14:50:18
 //  Auto updated?
 //    Yes
 //
@@ -169,6 +169,46 @@ impl Agent<(String, u32), (String, u32), str, u64> for Surf {
                     // Done!
                     Ok(Poll::Ready(()))
                 },
+            },
+
+            Script::Section5_4_4 => {
+                // After observing St. Antonius' statements, SURF decides to read St. Antonius'
+                // dataset based on being trusted.
+
+                // First wait on the agreement
+                let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
+                let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
+                    Some(agree) => agree,
+                    None => return Ok(Poll::Pending),
+                };
+                if !view.times.current().cast()?.contains(&agree.at) {
+                    return Ok(Poll::Pending);
+                }
+
+                // Then wait for the St. Antonius' statements
+                let mut just: MessageSet<SM> = MessageSet::new();
+                for msg in [(super::st_antonius::ID.into(), 1), (super::st_antonius::ID.into(), 5)] {
+                    match view.stated.get(&msg).cast()? {
+                        Some(msg) => {
+                            just.add(msg.clone());
+                        },
+                        None => return Ok(Poll::Pending),
+                    }
+                }
+
+                // OK, now state our own execution...
+                let msg: SM = create_message(3, self.id(), include_str!("../slick/surf_3.slick"));
+                just.add(msg.clone());
+                view.stated.add(Selector::All, msg).cast()?;
+
+                // ...and then enact it!
+                view.enacted.add(Selector::All, create_action(2, self.id(), agree.clone(), just)).cast()?;
+
+                // (and model the read)
+                let _ = self.handle.read(&((super::st_antonius::ID.into(), "patients-2024".into()), "patients".into())).cast()?;
+
+                // Done :)
+                Ok(Poll::Ready(()))
             },
         }
     }

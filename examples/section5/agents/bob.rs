@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 11:04:07
 //  Last edited:
-//    23 Jan 2025, 12:00:58
+//    23 Jan 2025, 13:19:37
 //  Auto updated?
 //    Yes
 //
@@ -154,6 +154,9 @@ impl Agent<(String, u32), (String, u32), str, u64> for Bob {
                     Ok(Poll::Ready(()))
                 },
             },
+
+            // Neither does Bob participate in the fourth
+            Script::Section5_4_4 => unreachable!(),
         }
     }
 }
