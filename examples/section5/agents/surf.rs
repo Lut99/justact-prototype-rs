@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 14:23:12
 //  Last edited:
-//    23 Jan 2025, 14:50:18
+//    23 Jan 2025, 17:35:33
 //  Auto updated?
 //    Yes
 //
@@ -42,10 +42,10 @@ pub const ID: &'static str = "surf";
 /// Defines SURF's state for section 5.4.2.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum State5_4_2 {
-    /// Going to announce we'll execute it.
+    /// Going to announce we'll execute step 2.
     Execute,
-    /// Justify the execution, then do it.
-    EnactExecute,
+    /// Executing step 2.
+    DoStep2,
 }
 
 
@@ -112,59 +112,34 @@ impl Agent<(String, u32), (String, u32), str, u64> for Surf {
                     // After observing Bob's message, SURF decides (and synchronizes with the others)
                     // they can do step 2. So they do ONCE the required data is available.
                     let target_id: (String, u32) = (super::bob::ID.into(), 1);
-                    let filter_consented_id: ((String, String), String) = ((super::bob::ID.into(), "step1".into()), "filter-consented".into());
-                    let patients_id: ((String, String), String) = ((super::st_antonius::ID.into(), "patients-2024".into()), "patients".into());
-                    if view.stated.contains_key(&target_id).cast()? && self.handle.exists(&filter_consented_id) && self.handle.exists(&patients_id) {
+                    if view.stated.contains_key(&target_id).cast()? {
                         // Publish ours
                         view.stated.add(Selector::All, create_message(2, self.id(), include_str!("../slick/surf_2.slick"))).cast()?;
 
-                        // We already execute our work! The justification later merely serves to prove it.
-                        let _ = self.handle.read(&filter_consented_id).cast()?;
-                        let _ = self.handle.read(&patients_id).cast()?;
-                        // Sadly, we'll emulate the execution for now.
-                        self.handle
-                            .write(((super::bob::ID.into(), "step2".into()), "consented".into()), b"billy bob jones\nanakin skywalker")
-                            .cast()?;
-
                         // Move to the next state
-                        self.state = State5_4_2::EnactExecute;
+                        self.state = State5_4_2::DoStep2;
                     }
                     Ok(Poll::Pending)
                 },
 
-                State5_4_2::EnactExecute => {
-                    // Let's first wait until the consortium had its chance to publish the agreement/times
-                    let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
-                    let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
-                        Some(agree) => agree,
-                        None => return Ok(Poll::Pending),
-                    };
-                    if !view.times.current().cast()?.contains(&agree.at) {
+                State5_4_2::DoStep2 => {
+                    // First, wait until Bob's justification for us doing work rolls around
+                    if !view.enacted.contains_key(&(super::bob::ID.into(), 1)).cast()? {
                         return Ok(Poll::Pending);
                     }
 
-                    // The target agreement is valid; check the required messages!
-                    // NOTE: We will only agree once all agents stated they have/can execute it.
-                    // Otherwise, our justification will fail, because Bob's message states that
-                    // task 4 has been executed (which hasn't been without `amdex`'s involvement).
-                    let mut just: MessageSet<SM> = MessageSet::new();
-                    for msg in [
-                        (super::amdex::ID.into(), 1),
-                        (super::bob::ID.into(), 1),
-                        (super::st_antonius::ID.into(), 1),
-                        (super::st_antonius::ID.into(), 4),
-                        (super::surf::ID.into(), 2),
-                    ] {
-                        match view.stated.get(&msg).cast()? {
-                            Some(msg) => {
-                                just.add(msg.clone());
-                            },
-                            None => return Ok(Poll::Pending),
-                        }
+                    // Then we wait until our input data is available
+                    let filter_consented_id: ((String, String), String) = ((super::bob::ID.into(), "step1".into()), "filter-consented".into());
+                    let patients_id: ((String, String), String) = ((super::st_antonius::ID.into(), "patients-2024".into()), "patients".into());
+                    if !self.handle.exists(&filter_consented_id) || !self.handle.exists(&patients_id) {
+                        return Ok(Poll::Pending);
                     }
 
-                    // We are confident everything we need is there; enact!
-                    view.enacted.add(Selector::All, create_action(1, self.id(), agree.clone(), just)).cast()?;
+                    // Then do it!
+                    let _ = self.handle.read(&filter_consented_id).cast()?;
+                    let _ = self.handle.read(&patients_id).cast()?;
+                    // Sadly, we'll emulate the execution for now.
+                    self.handle.write(((super::bob::ID.into(), "step2".into()), "consented".into()), b"billy bob jones\nanakin skywalker").cast()?;
 
                     // Done!
                     Ok(Poll::Ready(()))

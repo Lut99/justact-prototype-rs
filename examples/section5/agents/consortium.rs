@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    23 Jan 2025, 15:18:54
+//    23 Jan 2025, 17:13:04
 //  Auto updated?
 //    Yes
 //
@@ -93,17 +93,28 @@ impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
                 }
 
                 // Done, other agents can have a go (as long as the target isn't enacted yet!)
-                let target_ids: &[(String, u32)] = match self.script {
-                    Script::Section5_4_1 => &[(super::amy::ID.into(), 1)],
-                    Script::Section5_4_2 => &[(super::bob::ID.into(), 1), (super::st_antonius::ID.into(), 2), (super::surf::ID.into(), 1)],
-                    Script::Section5_4_4 => &[(super::st_antonius::ID.into(), 3)],
-                };
-                for id in target_ids {
-                    if !view.enacted.contains_key(id).cast()? {
-                        return Ok(ControlFlow::Continue(()));
-                    }
+                match self.script {
+                    Script::Section5_4_1 => {
+                        // Section 5.4.1 ends with `amy` enacting her second task
+                        if view.enacted.contains_key(&(super::amy::ID.into(), 1)).cast()? {
+                            Ok(ControlFlow::Continue(()))
+                        } else {
+                            Ok(ControlFlow::Break(()))
+                        }
+                    },
+
+                    Script::Section5_4_2 => {
+                        // Section 5.4.2 ends with ???
+                        // TODO
+                        Ok(ControlFlow::Continue(()))
+                    },
+
+                    Script::Section5_4_4 => {
+                        // Section 5.4.4 ends with ???
+                        // TODO
+                        Ok(ControlFlow::Continue(()))
+                    },
                 }
-                Ok(ControlFlow::Break(()))
             },
         }
     }

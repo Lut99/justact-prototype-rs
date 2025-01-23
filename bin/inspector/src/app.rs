@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    23 Jan 2025, 15:13:45
+//    23 Jan 2025, 17:41:17
 //  Auto updated?
 //    Yes
 //
@@ -44,7 +44,7 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 
 use crate::trace::TraceIter;
-use crate::widgets::scroll_area::{ScrollArea, ScrollState};
+use crate::widgets::scroll_area::ScrollState;
 
 
 /***** ERRORS *****/
@@ -780,18 +780,22 @@ impl<'s> StateGuard<'s> {
                                 i += 1;
 
                                 // Finally, the denotation
-                                frame.render_stateful_widget(
-                                    ScrollArea::new(
-                                        Paragraph::new(truths.clone())
-                                            .block(Block::bordered().title("Justification truths").fg(right_color))
-                                            .fg(right_color),
-                                        (2 + truths.width() as u16, 2 + truths.height() as u16),
-                                    ),
+                                // frame.render_stateful_widget(
+                                //     ScrollArea::new(
+                                //         Paragraph::new(truths.clone())
+                                //             .block(Block::bordered().title("Justification truths").fg(right_color))
+                                //             .fg(right_color),
+                                //         (2 + truths.width() as u16, 2 + truths.height() as u16),
+                                //     ),
+                                frame.render_widget(
+                                    Paragraph::new(truths.clone())
+                                        .block(Block::bordered().title("Justification truths").fg(right_color))
+                                        .fg(right_color),
                                     vrects[i],
-                                    &mut self.right_hscroll,
+                                    // &mut self.right_hscroll,
                                 );
                             },
-                            Err(err) => todo!(),
+                            Err(_) => todo!(),
                         }
                     },
                     TraceJustAct::StateMessage { who, to, msg } => {

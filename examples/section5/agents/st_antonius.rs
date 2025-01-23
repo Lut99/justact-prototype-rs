@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 17:45:04
 //  Last edited:
-//    23 Jan 2025, 15:09:28
+//    23 Jan 2025, 17:38:25
 //  Auto updated?
 //    Yes
 //
@@ -108,10 +108,12 @@ enum State5_4_1 {
 enum State5_4_2 {
     /// We're trying to publish `(st-antonius 1)`, i.e., publishing our dataset.
     PublishDataset,
+    /// We're going to justify- and then write our own dataset.
+    DoPublish,
     /// We've observed Bob's workflow and we want to execute parts of it.
     ExecuteBobsTask,
-    /// We want to justify our part in Bob's workflow.
-    EnactExecuteBobsTask,
+    /// Bob has created a justification for us doing work. Let's do it!
+    DoWork,
 }
 
 /// The St. Antonius' state throughout section 5.4.4.
@@ -277,48 +279,13 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                     // The St. Antonius publishes their dataset at the start, cuz why not
                     view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
 
-                    // ...and mirror the effect on the data plane
-                    self.handle
-                        .write(((self.id().into(), "patients-2024".into()), "patients".into()), b"billy bob jones\ncharlie brown\nanakin skywalker")
-                        .cast()?;
-
                     // Done, move to the next state
-                    self.state = State::Section5_4_2(State5_4_2::ExecuteBobsTask);
+                    self.state = State::Section5_4_2(State5_4_2::DoPublish);
                     Ok(Poll::Pending)
                 },
 
-                State5_4_2::ExecuteBobsTask => {
-                    // After observing Bob's message, St. Antonius decides (and synchronizes with
-                    // the others) they can do step 3. So they do ONCE the data is available.
-                    let target_id: (String, u32) = (super::bob::ID.into(), 1);
-                    let entry_count_id: ((String, String), String) = ((super::amdex::ID.into(), "utils".into()), "entry-count".into());
-                    let consented_id: ((String, String), String) = ((super::bob::ID.into(), "step2".into()), "consented".into());
-                    if view.stated.contains_key(&target_id).cast()? && self.handle.exists(&entry_count_id) && self.handle.exists(&consented_id) {
-                        // Publish ours
-                        view.stated.add(Selector::All, create_message(4, self.id(), include_str!("../slick/st-antonius_4.slick"))).cast()?;
-
-                        // Do the required data accesses
-                        let _ = self.handle.read(&entry_count_id).cast()?;
-                        let consented = self
-                            .handle
-                            .read(&consented_id)
-                            .cast()?
-                            .unwrap_or_else(|| panic!("Failed to get data contents even though we've checked it exists"));
-                        self.handle
-                            .write(
-                                ((super::bob::ID.into(), "step3".into()), "num-consented".into()),
-                                String::from_utf8_lossy(&consented).split('\n').count().to_string().as_bytes(),
-                            )
-                            .cast()?;
-
-                        // Move to the next state
-                        self.state = State::Section5_4_2(State5_4_2::EnactExecuteBobsTask);
-                    }
-                    Ok(Poll::Pending)
-                },
-
-                State5_4_2::EnactExecuteBobsTask => {
-                    // Let's first wait until the consortium had its chance to publish the agreement/times
+                State5_4_2::DoPublish => {
+                    // Once the agreement is there...
                     let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
                     let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
                         Some(agree) => agree,
@@ -328,28 +295,64 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                         return Ok(Poll::Pending);
                     }
 
-                    // The target agreement is valid; check the required messages!
-                    // NOTE: We will only agree once all agents stated they have/can execute it.
-                    // Otherwise, our justification will fail, because Bob's message states that
-                    // task 4 has been executed (which hasn't been without `amdex`'s involvement).
-                    let mut just: MessageSet<SM> = MessageSet::new();
-                    for msg in [
-                        (super::amdex::ID.into(), 1),
-                        (super::bob::ID.into(), 1),
-                        (super::st_antonius::ID.into(), 1),
-                        (super::st_antonius::ID.into(), 4),
-                        (super::surf::ID.into(), 2),
-                    ] {
-                        match view.stated.get(&msg).cast()? {
-                            Some(msg) => {
-                                just.add(msg.clone());
-                            },
-                            None => return Ok(Poll::Pending),
-                        }
+                    // ...we can justify writing to our own variable...
+                    view.enacted
+                        .add(
+                            Selector::All,
+                            create_action(1, self.id(), agree.clone(), MessageSet::from(view.stated.get(&(self.id().into(), 1)).cast()?.cloned())),
+                        )
+                        .cast()?;
+
+                    // ...and then write it!
+                    self.handle
+                        .write(((self.id().into(), "patients-2024".into()), "patients".into()), b"billy bob jones\ncharlie brown\nanakin skywalker")
+                        .cast()?;
+
+                    // Now we can move to considering Bob's workflow
+                    self.state = State::Section5_4_2(State5_4_2::ExecuteBobsTask);
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_2::ExecuteBobsTask => {
+                    // After observing Bob's message, St. Antonius decides (and synchronizes with
+                    // the others) they can do step 3. So they do ONCE the data is available.
+                    let target_id: (String, u32) = (super::bob::ID.into(), 1);
+                    if view.stated.contains_key(&target_id).cast()? {
+                        // Publish ours
+                        view.stated.add(Selector::All, create_message(4, self.id(), include_str!("../slick/st-antonius_4.slick"))).cast()?;
+
+                        // Move to the next state
+                        self.state = State::Section5_4_2(State5_4_2::DoWork);
+                    }
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_2::DoWork => {
+                    // We first wait until Bob's enactment has been done
+                    if !view.enacted.contains_key(&(super::bob::ID.into(), 1)).cast()? {
+                        return Ok(Poll::Pending);
                     }
 
-                    // We are confident everything we need is there; enact!
-                    view.enacted.add(Selector::All, create_action(2, self.id(), agree.clone(), just)).cast()?;
+                    // Then we wait until our input data is available
+                    let entry_count_id: ((String, String), String) = ((super::amdex::ID.into(), "utils".into()), "entry-count".into());
+                    let consented_id: ((String, String), String) = ((super::bob::ID.into(), "step2".into()), "consented".into());
+                    if !self.handle.exists(&entry_count_id) || !self.handle.exists(&consented_id) {
+                        return Ok(Poll::Pending);
+                    }
+
+                    // Now we can do our data accesses
+                    let _ = self.handle.read(&entry_count_id).cast()?;
+                    let consented = self
+                        .handle
+                        .read(&consented_id)
+                        .cast()?
+                        .unwrap_or_else(|| panic!("Failed to get data contents even though we've checked it exists"));
+                    self.handle
+                        .write(
+                            ((super::bob::ID.into(), "step3".into()), "num-consented".into()),
+                            String::from_utf8_lossy(&consented).split('\n').count().to_string().as_bytes(),
+                        )
+                        .cast()?;
 
                     // Done!
                     Ok(Poll::Ready(()))

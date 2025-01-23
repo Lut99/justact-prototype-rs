@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 11:04:07
 //  Last edited:
-//    23 Jan 2025, 13:19:37
+//    23 Jan 2025, 17:34:30
 //  Auto updated?
 //    Yes
 //
@@ -18,12 +18,16 @@ use justact::actions::ConstructableAction;
 use justact::actors::{Agent, View};
 use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
-use justact::collections::Selector;
 use justact::collections::map::{InfallibleMapSync as _, Map, MapAsync};
-use justact::collections::set::InfallibleSet as _;
+use justact::collections::set::InfallibleSet;
+use justact::collections::{Selector, Singleton};
 use justact::messages::{ConstructableMessage, MessageSet};
+use justact::policies::{Denotation, Extractor as _, Policy as _};
 use justact::times::Times;
 use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
+use justact_prototype::policy::slick::{Denotation as SlickDenotation, Extractor as SlickExtractor};
+use slick::GroundAtom;
+use slick::text::Text;
 
 use super::{Script, create_action, create_message};
 pub use crate::error::Error;
@@ -47,6 +51,10 @@ enum State5_4_2 {
     PublishWorkflow,
     /// We're going to enact our work.
     EnactWorkflow,
+    /// We do the promised work of the first step
+    DoStep1,
+    /// We do the promised work of the fourth step
+    DoStep4,
 }
 
 
@@ -106,11 +114,6 @@ impl Agent<(String, u32), (String, u32), str, u64> for Bob {
                     // executing step 4 yet.
                     view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/bob_1.slick"))).cast()?;
 
-                    // Let's write the result of the first step. Bob can do that already.
-                    self.handle
-                        .write(((self.id().into(), "step1".into()), "filter-consented".into()), b"code_that_actually_filters_consent_wowie();")
-                        .cast()?;
-
                     // Done, move to the next state
                     self.state = State5_4_2::EnactWorkflow;
                     Ok(Poll::Pending)
@@ -127,15 +130,9 @@ impl Agent<(String, u32), (String, u32), str, u64> for Bob {
                         return Ok(Poll::Pending);
                     }
 
-                    // Then wait for the justification to become stated.
+                    // Ensure that our own message and the "code/data" messages are available
                     let mut just: MessageSet<SM> = MessageSet::new();
-                    for msg in [
-                        (super::amdex::ID.into(), 1),
-                        (self.id().into(), 1),
-                        (super::st_antonius::ID.into(), 1),
-                        (super::st_antonius::ID.into(), 4),
-                        (super::surf::ID.into(), 2),
-                    ] {
+                    for msg in [(super::amdex::ID.into(), 1), (self.id().into(), 1), (super::st_antonius::ID.into(), 1)] {
                         match view.stated.get(&msg).cast()? {
                             Some(msg) => {
                                 just.add(msg.clone());
@@ -144,14 +141,58 @@ impl Agent<(String, u32), (String, u32), str, u64> for Bob {
                         }
                     }
 
+                    // Finally, wait for the St. Antonius and SURF to indicate they agree to the execution.
+                    let surf_execute: GroundAtom = GroundAtom::Tuple(vec![
+                        GroundAtom::Tuple(vec![GroundAtom::Constant(Text::from_str("bob")), GroundAtom::Constant(Text::from_str("step2"))]),
+                        GroundAtom::Constant(Text::from_str("executed")),
+                    ]);
+                    let st_antonius_execute: GroundAtom = GroundAtom::Tuple(vec![
+                        GroundAtom::Tuple(vec![GroundAtom::Constant(Text::from_str("bob")), GroundAtom::Constant(Text::from_str("step3"))]),
+                        GroundAtom::Constant(Text::from_str("executed")),
+                    ]);
+                    for msg in view.stated.iter().cast()? {
+                        let truths: SlickDenotation = SlickExtractor.extract(&Singleton(msg)).cast()?.truths();
+                        // Check if we found SURF's execute
+                        if msg.id().0 == super::surf::ID && truths.truth_of(&surf_execute) == Some(true) {
+                            just.add(msg.clone());
+                        }
+                        // Check if we found the St. Antonius' execute
+                        if msg.id().0 == super::st_antonius::ID && truths.truth_of(&st_antonius_execute) == Some(true) {
+                            just.add(msg.clone());
+                        }
+                    }
+                    if just.len().cast()? != 5 {
+                        return Ok(Poll::Pending);
+                    }
+
                     // Now enact our work
                     view.enacted.add(Selector::All, create_action(1, self.id(), agree.clone(), just)).cast()?;
 
-                    // Do the result of task 4
-                    let _ = self.handle.read(&((self.id().into(), "step3".into()), "num-consented".into())).cast()?;
-
                     // Done!
-                    Ok(Poll::Ready(()))
+                    self.state = State5_4_2::DoStep1;
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_2::DoStep1 => {
+                    // We execute the first task; we can kick that off immediately!
+                    self.handle
+                        .write(((self.id().into(), "step1".into()), "filter-consented".into()), b"code_that_actually_filters_consent_wowie();")
+                        .cast()?;
+                    self.state = State5_4_2::DoStep4;
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_2::DoStep4 => {
+                    // At this point, we've already enacted; only wait for the data to become
+                    // available and GO!
+                    let task3_result_id: ((String, String), String) = ((self.id().into(), "step3".into()), "num-consented".into());
+                    if self.handle.exists(&task3_result_id) {
+                        // Bob will now do SUPER interesting stuff with this dataset
+                        let _ = self.handle.read(&task3_result_id).cast()?;
+                        Ok(Poll::Ready(()))
+                    } else {
+                        Ok(Poll::Pending)
+                    }
                 },
             },
 

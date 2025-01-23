@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 09:31:53
 //  Last edited:
-//    21 Jan 2025, 09:39:52
+//    23 Jan 2025, 17:42:02
 //  Auto updated?
 //    Yes
 //
@@ -46,6 +46,7 @@ impl Error {
     /// # Returns
     /// A new Error, ready to wreak havoc.
     #[inline]
+    #[allow(unused)]
     pub fn new(err: impl 'static + error::Error) -> Self { Self(Box::new(err)) }
 }
 impl Display for Error {
