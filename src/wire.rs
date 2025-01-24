@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:11:30
 //  Last edited:
-//    21 Jan 2025, 15:04:14
+//    24 Jan 2025, 22:41:34
 //  Auto updated?
 //    Yes
 //
@@ -39,7 +39,7 @@ pub type Agreement = justact::Agreement<Arc<Message>, u64>;
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Action {
     /// Identifies this action (as an `(author, id)`-pair).
-    pub id: (String, u32),
+    pub id: (String, char),
 
     /// The payload of the action.
     pub basis: Agreement,
@@ -81,7 +81,7 @@ impl justact::Actored for Action {
     fn actor_id(&self) -> &Self::ActorId { &self.id.0 }
 }
 impl justact::Identifiable for Action {
-    type Id = (String, u32);
+    type Id = (String, char);
 
     #[inline]
     fn id(&self) -> &Self::Id { &self.id }

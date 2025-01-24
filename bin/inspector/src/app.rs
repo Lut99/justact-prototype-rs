@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    23 Jan 2025, 17:41:17
+//    24 Jan 2025, 22:41:58
 //  Auto updated?
 //    Yes
 //
@@ -209,7 +209,7 @@ struct State {
     right_vscroll: ScrollState,
 
     /// A cache for computed denotations of actions.
-    denot_cache: HashMap<(String, u32), Result<(Denotation, Text<'static>), SyntaxError>>,
+    denot_cache: HashMap<(String, char), Result<(Denotation, Text<'static>), SyntaxError>>,
 }
 impl State {
     /// Constructor for the State that initializes it to default.
@@ -277,7 +277,7 @@ struct StateGuard<'s> {
     right_vscroll: &'s mut ScrollState,
 
     /// A cache for computed denotations of actions.
-    denot_cache: &'s mut HashMap<(String, u32), Result<(Denotation, Text<'static>), SyntaxError>>,
+    denot_cache: &'s mut HashMap<(String, char), Result<(Denotation, Text<'static>), SyntaxError>>,
 }
 
 

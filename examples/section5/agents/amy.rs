@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 15:11:36
 //  Last edited:
-//    23 Jan 2025, 13:19:14
+//    24 Jan 2025, 22:50:06
 //  Auto updated?
 //    Yes
 //
@@ -86,7 +86,7 @@ impl Identifiable for Amy {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, u32), str, u64> for Amy {
+impl Agent<(String, u32), (String, char), str, u64> for Amy {
     type Error = Error;
 
     #[track_caller]
@@ -97,7 +97,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amy {
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // Decide which script to execute
         match self.script {
@@ -138,8 +138,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amy {
                     State::Download => {
                         // We wait until we see St. Antonius' enacted statement, making the to-be-
                         // downloaded dataset available
-                        let target_id: (String, u32) = (super::st_antonius::ID.into(), 1);
-                        if view.enacted.contains_key(&target_id).cast()? {
+                        if view.enacted.contains_key(&(super::st_antonius::ID.into(), 'b')).cast()? {
                             // Push the message
                             view.stated.add(Selector::All, create_message(2, self.id(), include_str!("../slick/amy_2.slick"))).cast()?;
                             self.state = State::EnactDownload;
@@ -179,7 +178,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amy {
                         }
 
                         // We have them all; enact!
-                        view.enacted.add(Selector::All, create_action(1, self.id(), agree.clone(), just)).cast()?;
+                        view.enacted.add(Selector::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
 
                         // Then update the data plane
                         self.handle.read(&((self.id().into(), "count-patients".into()), "num-patients".into())).cast()?;

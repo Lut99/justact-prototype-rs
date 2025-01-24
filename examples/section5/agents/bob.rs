@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 11:04:07
 //  Last edited:
-//    23 Jan 2025, 17:34:30
+//    24 Jan 2025, 22:45:15
 //  Auto updated?
 //    Yes
 //
@@ -89,7 +89,7 @@ impl Identifiable for Bob {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, u32), str, u64> for Bob {
+impl Agent<(String, u32), (String, char), str, u64> for Bob {
     type Error = Error;
 
     #[inline]
@@ -101,7 +101,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Bob {
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // Decide which script to execute
         match self.script {
@@ -166,7 +166,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Bob {
                     }
 
                     // Now enact our work
-                    view.enacted.add(Selector::All, create_action(1, self.id(), agree.clone(), just)).cast()?;
+                    view.enacted.add(Selector::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
 
                     // Done!
                     self.state = State5_4_2::DoStep1;

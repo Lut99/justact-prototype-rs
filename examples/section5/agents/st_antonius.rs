@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 17:45:04
 //  Last edited:
-//    23 Jan 2025, 17:38:25
+//    24 Jan 2025, 22:57:18
 //  Auto updated?
 //    Yes
 //
@@ -94,6 +94,9 @@ impl State {
 enum State5_4_1 {
     /// We're trying to publish `(st-antonius 1)`, i.e., publishing our dataset.
     PublishDataset,
+    /// We're going to justify- and then write our own dataset.
+    DoPublish,
+
     /// We're trying to publish our to-be-enacted message `(st-antonius 2)`, i.e., doing Amy's
     /// task.
     ExecuteAmysTask,
@@ -110,6 +113,7 @@ enum State5_4_2 {
     PublishDataset,
     /// We're going to justify- and then write our own dataset.
     DoPublish,
+
     /// We've observed Bob's workflow and we want to execute parts of it.
     ExecuteBobsTask,
     /// Bob has created a justification for us doing work. Let's do it!
@@ -121,6 +125,9 @@ enum State5_4_2 {
 enum State5_4_4 {
     /// We're trying to publish `(st-antonius 1)`, i.e., publishing our dataset.
     PublishDataset,
+    /// We're going to justify- and then write our own dataset.
+    DoPublish,
+
     /// Publishing the internalized local policy.
     InternalisedLocalPolicy,
     /// Eventually, they _partially_ publish their further policy.
@@ -168,7 +175,7 @@ impl Identifiable for StAntonius {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
+impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
     type Error = Error;
 
     #[track_caller]
@@ -179,7 +186,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // Decide which script to execute
         match self.script {
@@ -187,23 +194,47 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                 // A little state machine with three states:
                 match self.state.section5_4_1() {
                     State5_4_1::PublishDataset => {
-                        // The St. Antonius publishes their authorization only after Amy has published
-                        let target_id: (String, u32) = (super::amy::ID.into(), 1);
-                        if view.stated.contains_key(&target_id).cast()? {
-                            // Publish ours
-                            view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
+                        // The St. Antonius publishes their dataset at the start, cuz why not
+                        view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
 
-                            // ...and mirror the effect on the data plane
-                            self.handle
-                                .write(
-                                    ((self.id().into(), "patients-2024".into()), "patients".into()),
-                                    b"billy bob jones\ncharlie brown\nanakin skywalker",
-                                )
-                                .cast()?;
-
-                            // Done, move to the next state
-                            self.state = State::Section5_4_1(State5_4_1::ExecuteAmysTask);
+                        // Done, move to the next state
+                        self.state = State::Section5_4_1(State5_4_1::DoPublish);
+                        Ok(Poll::Pending)
+                    },
+                    State5_4_1::DoPublish => {
+                        // Once the agreement is there...
+                        let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
+                        let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
+                            Some(agree) => agree,
+                            None => return Ok(Poll::Pending),
+                        };
+                        if !view.times.current().cast()?.contains(&agree.at) {
+                            return Ok(Poll::Pending);
                         }
+
+                        // ...we can justify writing to our own variable...
+                        view.enacted
+                            .add(
+                                Selector::All,
+                                create_action(
+                                    'a',
+                                    self.id(),
+                                    agree.clone(),
+                                    MessageSet::from(view.stated.get(&(self.id().into(), 1)).cast()?.cloned()),
+                                ),
+                            )
+                            .cast()?;
+
+                        // ...and then write it!
+                        self.handle
+                            .write(
+                                ((self.id().into(), "patients-2024".into()), "patients".into()),
+                                b"billy bob jones\ncharlie brown\nanakin skywalker",
+                            )
+                            .cast()?;
+
+                        // Now we can move to considering Bob's workflow
+                        self.state = State::Section5_4_1(State5_4_1::ExecuteAmysTask);
                         Ok(Poll::Pending)
                     },
 
@@ -243,7 +274,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                         }
 
                         // Now we're confident all messages are there, too; enact!
-                        view.enacted.add(Selector::All, create_action(1, self.id(), agree.clone(), just)).cast()?;
+                        view.enacted.add(Selector::All, create_action('b', self.id(), agree.clone(), just)).cast()?;
 
                         // Then update the data plane
                         self.handle.read(&((super::amdex::ID.into(), "utils".into()), "entry-count".into())).cast()?;
@@ -283,7 +314,6 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                     self.state = State::Section5_4_2(State5_4_2::DoPublish);
                     Ok(Poll::Pending)
                 },
-
                 State5_4_2::DoPublish => {
                     // Once the agreement is there...
                     let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
@@ -299,7 +329,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                     view.enacted
                         .add(
                             Selector::All,
-                            create_action(1, self.id(), agree.clone(), MessageSet::from(view.stated.get(&(self.id().into(), 1)).cast()?.cloned())),
+                            create_action('a', self.id(), agree.clone(), MessageSet::from(view.stated.get(&(self.id().into(), 1)).cast()?.cloned())),
                         )
                         .cast()?;
 
@@ -329,7 +359,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
 
                 State5_4_2::DoWork => {
                     // We first wait until Bob's enactment has been done
-                    if !view.enacted.contains_key(&(super::bob::ID.into(), 1)).cast()? {
+                    if !view.enacted.contains_key(&(super::bob::ID.into(), 'a')).cast()? {
                         return Ok(Poll::Pending);
                     }
 
@@ -364,12 +394,35 @@ impl Agent<(String, u32), (String, u32), str, u64> for StAntonius {
                     // The St. Antonius publishes their dataset at the start, cuz why not
                     view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
 
-                    // ...and mirror the effect on the data plane
+                    // Done, move to the next state
+                    self.state = State::Section5_4_4(State5_4_4::DoPublish);
+                    Ok(Poll::Pending)
+                },
+                State5_4_4::DoPublish => {
+                    // Once the agreement is there...
+                    let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
+                    let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
+                        Some(agree) => agree,
+                        None => return Ok(Poll::Pending),
+                    };
+                    if !view.times.current().cast()?.contains(&agree.at) {
+                        return Ok(Poll::Pending);
+                    }
+
+                    // ...we can justify writing to our own variable...
+                    view.enacted
+                        .add(
+                            Selector::All,
+                            create_action('a', self.id(), agree.clone(), MessageSet::from(view.stated.get(&(self.id().into(), 1)).cast()?.cloned())),
+                        )
+                        .cast()?;
+
+                    // ...and then write it!
                     self.handle
                         .write(((self.id().into(), "patients-2024".into()), "patients".into()), b"billy bob jones\ncharlie brown\nanakin skywalker")
                         .cast()?;
 
-                    // Done, move to the next state
+                    // Done! Move to the next state
                     self.state = State::Section5_4_4(State5_4_4::InternalisedLocalPolicy);
                     Ok(Poll::Pending)
                 },

@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:05:42
 //  Last edited:
-//    21 Jan 2025, 17:19:37
+//    24 Jan 2025, 22:41:00
 //  Auto updated?
 //    Yes
 //
@@ -84,7 +84,7 @@ impl Runtime {
 }
 impl justact::Runtime for Runtime {
     type MessageId = (String, u32);
-    type ActionId = (String, u32);
+    type ActionId = (String, char);
     type AgentId = str;
     type SynchronizerId = str;
     type Payload = str;

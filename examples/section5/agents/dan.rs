@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 09:25:37
 //  Last edited:
-//    23 Jan 2025, 13:21:27
+//    24 Jan 2025, 22:44:24
 //  Auto updated?
 //    Yes
 //
@@ -65,7 +65,7 @@ impl Identifiable for Dan {
     #[inline]
     fn id(&self) -> &Self::Id { "dan" }
 }
-impl Agent<(String, u32), (String, u32), str, u64> for Dan {
+impl Agent<(String, u32), (String, char), str, u64> for Dan {
     type Error = Error;
 
     #[track_caller]
@@ -76,7 +76,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Dan {
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // Decide which script to execute
         match self.script {

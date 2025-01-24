@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:50:19
 //  Last edited:
-//    23 Jan 2025, 17:26:54
+//    24 Jan 2025, 22:42:57
 //  Auto updated?
 //    Yes
 //
@@ -109,13 +109,13 @@ where
 /// A new message of type `SA`, constructed with its
 /// [`ConstructableAction`](justact::ConstructableAction) implementation.
 fn create_action<SA>(
-    id: u32,
+    id: char,
     actor_id: impl Into<String>,
     basis: impl Into<justact::Agreement<SA::Message, SA::Timestamp>>,
     just: impl Into<justact::MessageSet<SA::Message>>,
 ) -> SA
 where
-    SA: justact::ConstructableAction<Id = (String, u32), ActorId = str>,
+    SA: justact::ConstructableAction<Id = (String, char), ActorId = str>,
     SA::Message: Clone + justact::Message,
     <SA::Message as justact::Identifiable>::Id: ToOwned,
     <SA::Message as justact::Authored>::AuthorId: ToOwned,
@@ -179,7 +179,7 @@ impl justact::Identifiable for Agent {
         }
     }
 }
-impl justact::Agent<(String, u32), (String, u32), str, u64> for Agent {
+impl justact::Agent<(String, u32), (String, char), str, u64> for Agent {
     type Error = Error;
 
     #[inline]
@@ -190,7 +190,7 @@ impl justact::Agent<(String, u32), (String, u32), str, u64> for Agent {
         S: justact::MapAsync<Self::Id, SM>,
         E: justact::MapAsync<Self::Id, SA>,
         SM: justact::ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: justact::ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SA: justact::ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         match self {
             Self::Amdex(a) => a.poll(view).map_err(Error::Amdex),

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:22:02
 //  Last edited:
-//    23 Jan 2025, 17:30:49
+//    24 Jan 2025, 22:43:27
 //  Auto updated?
 //    Yes
 //
@@ -80,7 +80,7 @@ impl Identifiable for Amdex {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
+impl Agent<(String, u32), (String, char), str, u64> for Amdex {
     type Error = Error;
 
     #[inline]
@@ -92,7 +92,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // Decide which script to execute
         match self.script {
@@ -118,7 +118,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Amdex {
                     // Then we justify using our own message only.
                     let amdex_1_id: (String, u32) = (self.id().into(), 1);
                     let just: MessageSet<SM> = MessageSet::from(view.stated.get(&amdex_1_id).cast()?.cloned());
-                    view.enacted.add(Selector::All, create_action(1, self.id(), agree.clone(), just)).cast()?;
+                    view.enacted.add(Selector::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
 
                     // With that done, make the "container" available
                     self.handle.write(((self.id().into(), "utils".into()), "entry-count".into()), b"super_clever_code();").cast()?;

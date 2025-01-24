@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    23 Jan 2025, 17:13:04
+//    24 Jan 2025, 22:52:28
 //  Auto updated?
 //    Yes
 //
@@ -64,7 +64,7 @@ impl Identifiable for Consortium {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
+impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
     type Error = Error;
 
     #[inline]
@@ -76,7 +76,7 @@ impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         match self.script {
             Script::Section5_4_1 | Script::Section5_4_2 | Script::Section5_4_4 => {
@@ -95,12 +95,9 @@ impl Synchronizer<(String, u32), (String, u32), str, u64> for Consortium {
                 // Done, other agents can have a go (as long as the target isn't enacted yet!)
                 match self.script {
                     Script::Section5_4_1 => {
-                        // Section 5.4.1 ends with `amy` enacting her second task
-                        if view.enacted.contains_key(&(super::amy::ID.into(), 1)).cast()? {
-                            Ok(ControlFlow::Continue(()))
-                        } else {
-                            Ok(ControlFlow::Break(()))
-                        }
+                        // Section 5.4.1 ends with ???
+                        // TODO
+                        Ok(ControlFlow::Continue(()))
                     },
 
                     Script::Section5_4_2 => {

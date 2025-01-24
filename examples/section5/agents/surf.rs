@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 14:23:12
 //  Last edited:
-//    23 Jan 2025, 17:35:33
+//    24 Jan 2025, 22:45:33
 //  Auto updated?
 //    Yes
 //
@@ -79,7 +79,7 @@ impl Identifiable for Surf {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, u32), str, u64> for Surf {
+impl Agent<(String, u32), (String, char), str, u64> for Surf {
     type Error = Error;
 
     #[track_caller]
@@ -90,7 +90,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Surf {
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
-        SA: ConstructableAction<Id = (String, u32), ActorId = Self::Id, Message = SM, Timestamp = u64>,
+        SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // Decide which script to execute
         match self.script {
@@ -124,7 +124,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Surf {
 
                 State5_4_2::DoStep2 => {
                     // First, wait until Bob's justification for us doing work rolls around
-                    if !view.enacted.contains_key(&(super::bob::ID.into(), 1)).cast()? {
+                    if !view.enacted.contains_key(&(super::bob::ID.into(), 'a')).cast()? {
                         return Ok(Poll::Pending);
                     }
 
@@ -177,7 +177,7 @@ impl Agent<(String, u32), (String, u32), str, u64> for Surf {
                 view.stated.add(Selector::All, msg).cast()?;
 
                 // ...and then enact it!
-                view.enacted.add(Selector::All, create_action(2, self.id(), agree.clone(), just)).cast()?;
+                view.enacted.add(Selector::All, create_action('b', self.id(), agree.clone(), just)).cast()?;
 
                 // (and model the read)
                 let _ = self.handle.read(&((super::st_antonius::ID.into(), "patients-2024".into()), "patients".into())).cast()?;
