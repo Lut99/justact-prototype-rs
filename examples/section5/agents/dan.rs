@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 09:25:37
 //  Last edited:
-//    24 Jan 2025, 22:44:24
+//    24 Jan 2025, 23:02:13
 //  Auto updated?
 //    Yes
 //
@@ -100,8 +100,8 @@ impl Agent<(String, u32), (String, char), str, u64> for Dan {
                 Ok(Poll::Ready(()))
             },
 
-            // Dan doesn't participate in the second or fourth example
-            Script::Section5_4_2 | Script::Section5_4_4 => unreachable!(),
+            // Dan doesn't participate in the second, fourth or fifth example
+            Script::Section5_4_2 | Script::Section5_4_4 | Script::Section5_4_5 => unreachable!(),
         }
     }
 }

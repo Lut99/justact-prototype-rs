@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:22:02
 //  Last edited:
-//    24 Jan 2025, 22:43:27
+//    24 Jan 2025, 23:04:58
 //  Auto updated?
 //    Yes
 //
@@ -72,6 +72,7 @@ impl Amdex {
     /// # Returns
     /// A new Amdex agent.
     #[inline]
+    #[allow(unused)]
     pub fn new(script: Script, handle: &StoreHandle) -> Self { Self { script, state: State::PublishEntryCount, handle: handle.scope(ID) } }
 }
 impl Identifiable for Amdex {
@@ -130,6 +131,8 @@ impl Agent<(String, u32), (String, char), str, u64> for Amdex {
 
             // Not involved in section 5.4.4, but present because they will receive a message from the St. Antonius
             Script::Section5_4_4 => Ok(Poll::Ready(())),
+            // At all not involved in 5.4.5.
+            Script::Section5_4_5 => unreachable!(),
         }
     }
 }

@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    24 Jan 2025, 22:52:28
+//    24 Jan 2025, 23:17:53
 //  Auto updated?
 //    Yes
 //
@@ -38,10 +38,29 @@ pub const ID: &'static str = "consortium";
 
 
 
+/***** HELPERS *****/
+/// Defines the consortium's state for section 5.4.5.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum State5_4_5 {
+    /// Publish the initial agreement.
+    InitialAgreement,
+    /// We changed our mind. Move to the secondary agreement.
+    AmendedAgreement,
+    /// Oh no, something happened! Time to pull the wires.
+    PullOutWires,
+    /// Order has been restored; go back to the amended agreement.
+    BackForSeconds,
+}
+
+
+
+
+
 /***** LIBRARY *****/
 /// The `consortium`-agent from section 5.4.1.
 pub struct Consortium {
     script:  Script,
+    state:   State5_4_5,
     _handle: ScopedStoreHandle,
 }
 impl Consortium {
@@ -56,7 +75,7 @@ impl Consortium {
     /// # Returns
     /// A new Consortium agent.
     #[inline]
-    pub fn new(script: Script, handle: &StoreHandle) -> Self { Self { script, _handle: handle.scope(ID) } }
+    pub fn new(script: Script, handle: &StoreHandle) -> Self { Self { script, state: State5_4_5::InitialAgreement, _handle: handle.scope(ID) } }
 }
 impl Identifiable for Consortium {
     type Id = str;
@@ -85,7 +104,7 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                 let current_times = view.times.current().cast()?;
                 if !current_times.contains(&1) {
                     // Add the agreement
-                    let agree = Agreement { message: create_message(1, self.id(), include_str!("../slick/agreement.slick")), at: 1 };
+                    let agree = Agreement { message: create_message(1, self.id(), include_str!("../slick/consortium-1.slick")), at: 1 };
                     view.agreed.add(agree).cast()?;
 
                     // Update the timestamp
@@ -111,7 +130,71 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                         // TODO
                         Ok(ControlFlow::Continue(()))
                     },
+
+                    Script::Section5_4_5 => unreachable!(),
                 }
+            },
+
+            // The fifth example features some different behaviour...
+            Script::Section5_4_5 => match self.state {
+                State5_4_5::InitialAgreement => {
+                    // When no time is active yet, the consortium agent will initialize the system by bumping
+                    // it to `1` and making the initial agreement active.
+                    let current_times = view.times.current().cast()?;
+                    if !current_times.contains(&1) {
+                        // Add the agreement
+                        let agree = Agreement { message: create_message(1, self.id(), include_str!("../slick/consortium-1.slick")), at: 1 };
+                        view.agreed.add(agree).cast()?;
+
+                        // Update the timestamp
+                        view.times.add_current(1).cast()?;
+                    }
+
+                    // This time, move to the second state
+                    self.state = State5_4_5::AmendedAgreement;
+                    Ok(ControlFlow::Continue(()))
+                },
+
+                State5_4_5::AmendedAgreement => {
+                    // Once the St. Antonius has done their thing, we decide to amend the agreement
+                    if !view.stated.contains_key(&(super::st_antonius::ID.into(), 1)).cast()? {
+                        return Ok(ControlFlow::Continue(()));
+                    }
+
+                    // Push the amendment
+                    let agree = Agreement { message: create_message(2, self.id(), include_str!("../slick/consortium-2.slick")), at: 2 };
+                    view.agreed.add(agree).cast()?;
+
+                    // Update the timestamp
+                    view.times.add_current(2).cast()?;
+
+                    // Then we move to the third state!
+                    self.state = State5_4_5::PullOutWires;
+                    Ok(ControlFlow::Continue(()))
+                },
+
+                State5_4_5::PullOutWires => {
+                    // To emulate time passing, wait for the St. Antonius to publish their message
+                    if !view.stated.contains_key(&(super::st_antonius::ID.into(), 7)).cast()? {
+                        return Ok(ControlFlow::Continue(()));
+                    }
+
+                    // Move to time 3, but make nothing active!!
+                    view.times.add_current(3).cast()?;
+
+                    // Move to the final state
+                    self.state = State5_4_5::BackForSeconds;
+                    Ok(ControlFlow::Continue(()))
+                },
+
+                State5_4_5::BackForSeconds => {
+                    // We'll have to re-publish the same agreement at time 3, then everything is fine!
+                    let agree = Agreement { message: create_message(2, self.id(), include_str!("../slick/consortium-2.slick")), at: 3 };
+                    view.agreed.add(agree).cast()?;
+
+                    // Done with this example
+                    Ok(ControlFlow::Break(()))
+                },
             },
         }
     }

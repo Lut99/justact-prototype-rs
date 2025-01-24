@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 14:23:12
 //  Last edited:
-//    24 Jan 2025, 22:45:33
+//    24 Jan 2025, 23:05:08
 //  Auto updated?
 //    Yes
 //
@@ -71,6 +71,7 @@ impl Surf {
     /// # Returns
     /// A new Surf agent.
     #[inline]
+    #[allow(unused)]
     pub fn new(script: Script, handle: &StoreHandle) -> Self { Self { script, state: State5_4_2::Execute, handle: handle.scope(ID) } }
 }
 impl Identifiable for Surf {
@@ -185,6 +186,9 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                 // Done :)
                 Ok(Poll::Ready(()))
             },
+
+            // SURF doesn't participate in example 5
+            Script::Section5_4_5 => unreachable!(),
         }
     }
 }

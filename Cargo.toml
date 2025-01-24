@@ -23,6 +23,11 @@ name = "section5-4-4"
 path = "examples/section5/section5.4.4.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
+[[example]]
+name = "section5-4-5"
+path = "examples/section5/section5.4.5.rs"
+required-features = ["dataplane", "log", "serde", "slick"]
+
 
 [dependencies]
 # bit-vec = "0.8.0"

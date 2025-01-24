@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 11:04:07
 //  Last edited:
-//    24 Jan 2025, 22:45:15
+//    24 Jan 2025, 23:01:18
 //  Auto updated?
 //    Yes
 //
@@ -196,8 +196,8 @@ impl Agent<(String, u32), (String, char), str, u64> for Bob {
                 },
             },
 
-            // Neither does Bob participate in the fourth
-            Script::Section5_4_4 => unreachable!(),
+            // Neither does Bob participate in the fourth or fifth
+            Script::Section5_4_4 | Script::Section5_4_5 => unreachable!(),
         }
     }
 }

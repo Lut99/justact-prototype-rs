@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 17:45:04
 //  Last edited:
-//    24 Jan 2025, 22:57:18
+//    24 Jan 2025, 23:11:11
 //  Auto updated?
 //    Yes
 //
@@ -50,6 +50,7 @@ enum State {
     Section5_4_1(State5_4_1),
     Section5_4_2(State5_4_2),
     Section5_4_4(State5_4_4),
+    Section5_4_5(State5_4_5),
 }
 impl State {
     /// Forces interpretation as a section 5.4.1 state.
@@ -86,6 +87,18 @@ impl State {
     #[inline]
     fn section5_4_4(self) -> State5_4_4 {
         if let Self::Section5_4_4(state) = self { state } else { panic!("Cannot unwrap a non-`State::Section5_4_4` as one") }
+    }
+
+    /// Forces interpretation as a section 5.4.5 state.
+    ///
+    /// # Returns
+    /// A [`State5_4_5`] describing the state for the first example.
+    ///
+    /// # Panics
+    /// This function panics if this is not for the first state.
+    #[inline]
+    fn section5_4_5(self) -> State5_4_5 {
+        if let Self::Section5_4_5(state) = self { state } else { panic!("Cannot unwrap a non-`State::Section5_4_5` as one") }
     }
 }
 
@@ -134,6 +147,18 @@ enum State5_4_4 {
     PatientPolicy,
 }
 
+/// The St. Antonius' state throughout section 5.4.5.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum State5_4_5 {
+    /// We're trying to publish `(st-antonius 1)`, i.e., publishing our dataset.
+    PublishDataset,
+    /// We're going to justify- and then write our own dataset.
+    DoPublish,
+
+    /// We mark a dataset as insensitive, because we now have an agreement that can!
+    MarkInsensitive,
+}
+
 
 
 
@@ -164,6 +189,7 @@ impl StAntonius {
                 Script::Section5_4_1 => State::Section5_4_1(State5_4_1::PublishDataset),
                 Script::Section5_4_2 => State::Section5_4_2(State5_4_2::PublishDataset),
                 Script::Section5_4_4 => State::Section5_4_4(State5_4_4::PublishDataset),
+                Script::Section5_4_5 => State::Section5_4_5(State5_4_5::PublishDataset),
             },
             handle: handle.scope(ID),
         }
@@ -473,6 +499,62 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     }
 
                     // Done
+                    Ok(Poll::Ready(()))
+                },
+            },
+
+            Script::Section5_4_5 => match self.state.section5_4_5() {
+                State5_4_5::PublishDataset => {
+                    // The St. Antonius publishes their dataset at the start, cuz why not
+                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
+
+                    // Done, move to the next state
+                    self.state = State::Section5_4_5(State5_4_5::DoPublish);
+                    Ok(Poll::Pending)
+                },
+                State5_4_5::DoPublish => {
+                    // Once the agreement is there...
+                    let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
+                    let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
+                        Some(agree) => agree,
+                        None => return Ok(Poll::Pending),
+                    };
+                    if !view.times.current().cast()?.contains(&agree.at) {
+                        return Ok(Poll::Pending);
+                    }
+
+                    // ...we can justify writing to our own variable...
+                    view.enacted
+                        .add(
+                            Selector::All,
+                            create_action('a', self.id(), agree.clone(), MessageSet::from(view.stated.get(&(self.id().into(), 1)).cast()?.cloned())),
+                        )
+                        .cast()?;
+
+                    // ...and then write it!
+                    self.handle
+                        .write(((self.id().into(), "patients-2024".into()), "patients".into()), b"billy bob jones\ncharlie brown\nanakin skywalker")
+                        .cast()?;
+
+                    // Done! Move to the next state
+                    self.state = State::Section5_4_5(State5_4_5::MarkInsensitive);
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_5::MarkInsensitive => {
+                    // Wait for the second agreement to be come valid
+                    let agree: &Agreement<_, _> = match view.agreed.get(&(super::consortium::ID.into(), 2)).cast()? {
+                        Some(agree) => agree,
+                        None => return Ok(Poll::Pending),
+                    };
+                    if !view.times.current().cast()?.contains(&agree.at) {
+                        return Ok(Poll::Pending);
+                    }
+
+                    // Publish that we mark it as insensitive
+                    view.stated.add(Selector::All, create_message(7, self.id(), include_str!("../slick/st-antonius_7.slick"))).cast()?;
+
+                    // Done!
                     Ok(Poll::Ready(()))
                 },
             },
