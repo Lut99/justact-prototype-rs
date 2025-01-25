@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:26:24
 //  Last edited:
-//    21 Jan 2025, 15:05:18
+//    25 Jan 2025, 21:24:25
 //  Auto updated?
 //    Yes
 //
@@ -20,7 +20,7 @@ use std::sync::Arc;
 use crate::wire::{Action, Agreement, Message};
 
 mod justact {
-    pub use ::justact::auxillary::Identifiable;
+    pub use ::justact::auxillary::{Actored, Authored, Identifiable};
     pub use ::justact::collections::Selector;
     pub use ::justact::collections::map::{Map, MapAsync};
     pub use ::justact::collections::set::{Set, SetSync};
@@ -37,6 +37,30 @@ pub type Agreements = HashMap<(String, u32), Agreement>;
 
 /// Defines the set of stated messages.
 pub type Statements = MapAsync<Arc<Message>>;
+
+
+
+
+
+/***** HELPERS *****/
+/// Abstracts over both [`Actored`](justact::Actored) and [`Authored`](justact::Authored) objects.
+trait Agented {
+    type Id: ?Sized + Eq + Hash;
+
+    fn id(&self) -> &Self::Id;
+}
+impl<T: justact::Actored> Agented for T {
+    type Id = T::ActorId;
+
+    #[inline]
+    fn id(&self) -> &Self::Id { <T as justact::Actored>::actor_id(self) }
+}
+impl<T: justact::Authored> Agented for T {
+    type Id = T::AuthorId;
+
+    #[inline]
+    fn id(&self) -> &Self::Id { <T as justact::Authored>::author_id(self) }
+}
 
 
 
@@ -220,6 +244,11 @@ where
     where
         E: justact::Identifiable,
     {
+        // Check if this agent may publish an element with the given author
+
+        // Then add the message to the selected agent's view
+        // NOTE: Efficiency should be OK despite the clones everywhere, as we assume that messages
+        //       are `Arc`'d in our prototype.
         match selector {
             justact::Selector::Agent(id) => {
                 self.parent
