@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 11:04:07
 //  Last edited:
-//    24 Jan 2025, 23:01:18
+//    25 Jan 2025, 20:36:47
 //  Auto updated?
 //    Yes
 //
@@ -176,7 +176,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Bob {
                 State5_4_2::DoStep1 => {
                     // We execute the first task; we can kick that off immediately!
                     self.handle
-                        .write(((self.id().into(), "step1".into()), "filter-consented".into()), b"code_that_actually_filters_consent_wowie();")
+                        .write(((self.id(), "step1"), "filter-consented"), (self.id(), 'a'), b"code_that_actually_filters_consent_wowie();")
                         .cast()?;
                     self.state = State5_4_2::DoStep4;
                     Ok(Poll::Pending)
@@ -188,7 +188,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Bob {
                     let task3_result_id: ((String, String), String) = ((self.id().into(), "step3".into()), "num-consented".into());
                     if self.handle.exists(&task3_result_id) {
                         // Bob will now do SUPER interesting stuff with this dataset
-                        let _ = self.handle.read(&task3_result_id).cast()?;
+                        let _ = self.handle.read(task3_result_id, (self.id(), 'a')).cast()?;
                         Ok(Poll::Ready(()))
                     } else {
                         Ok(Poll::Pending)

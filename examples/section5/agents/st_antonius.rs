@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 17:45:04
 //  Last edited:
-//    24 Jan 2025, 23:11:11
+//    25 Jan 2025, 20:40:03
 //  Auto updated?
 //    Yes
 //
@@ -253,10 +253,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
 
                         // ...and then write it!
                         self.handle
-                            .write(
-                                ((self.id().into(), "patients-2024".into()), "patients".into()),
-                                b"billy bob jones\ncharlie brown\nanakin skywalker",
-                            )
+                            .write(((self.id(), "patients-2024"), "patients"), (self.id(), 'a'), b"billy bob jones\ncharlie brown\nanakin skywalker")
                             .cast()?;
 
                         // Now we can move to considering Bob's workflow
@@ -303,11 +300,13 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                         view.enacted.add(Selector::All, create_action('b', self.id(), agree.clone(), just)).cast()?;
 
                         // Then update the data plane
-                        self.handle.read(&((super::amdex::ID.into(), "utils".into()), "entry-count".into())).cast()?;
-                        let patients: Option<Vec<u8>> = self.handle.read(&((self.id().into(), "patients-2024".into()), "patients".into())).cast()?;
+                        let enact_id: (&str, char) = (self.id(), 'b');
+                        self.handle.read(((super::amdex::ID, "utils"), "entry-count"), enact_id).cast()?;
+                        let patients: Option<Vec<u8>> = self.handle.read(((self.id(), "patients-2024"), "patients"), enact_id).cast()?;
                         self.handle
                             .write(
-                                ((super::amy::ID.into(), "count-patients".into()), "num-patients".into()),
+                                ((super::amy::ID, "count-patients"), "num-patients"),
+                                enact_id,
                                 patients.map(|p| String::from_utf8_lossy(&p).lines().count()).unwrap_or(0).to_string().as_bytes(),
                             )
                             .cast()?;
@@ -361,7 +360,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
 
                     // ...and then write it!
                     self.handle
-                        .write(((self.id().into(), "patients-2024".into()), "patients".into()), b"billy bob jones\ncharlie brown\nanakin skywalker")
+                        .write(((self.id(), "patients-2024"), "patients"), (self.id(), 'a'), b"billy bob jones\ncharlie brown\nanakin skywalker")
                         .cast()?;
 
                     // Now we can move to considering Bob's workflow
@@ -397,15 +396,17 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     }
 
                     // Now we can do our data accesses
-                    let _ = self.handle.read(&entry_count_id).cast()?;
+                    let enact_id: (&str, char) = (super::bob::ID, 'a');
+                    let _ = self.handle.read(entry_count_id, enact_id).cast()?;
                     let consented = self
                         .handle
-                        .read(&consented_id)
+                        .read(consented_id, enact_id)
                         .cast()?
                         .unwrap_or_else(|| panic!("Failed to get data contents even though we've checked it exists"));
                     self.handle
                         .write(
-                            ((super::bob::ID.into(), "step3".into()), "num-consented".into()),
+                            ((super::bob::ID, "step3"), "num-consented"),
+                            enact_id,
                             String::from_utf8_lossy(&consented).split('\n').count().to_string().as_bytes(),
                         )
                         .cast()?;
@@ -445,7 +446,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
 
                     // ...and then write it!
                     self.handle
-                        .write(((self.id().into(), "patients-2024".into()), "patients".into()), b"billy bob jones\ncharlie brown\nanakin skywalker")
+                        .write(((self.id(), "patients-2024"), "patients"), (self.id(), 'a'), b"billy bob jones\ncharlie brown\nanakin skywalker")
                         .cast()?;
 
                     // Done! Move to the next state
@@ -533,7 +534,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
 
                     // ...and then write it!
                     self.handle
-                        .write(((self.id().into(), "patients-2024".into()), "patients".into()), b"billy bob jones\ncharlie brown\nanakin skywalker")
+                        .write(((self.id(), "patients-2024"), "patients"), (self.id(), 'a'), b"billy bob jones\ncharlie brown\nanakin skywalker")
                         .cast()?;
 
                     // Done! Move to the next state

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:22:02
 //  Last edited:
-//    24 Jan 2025, 23:04:58
+//    25 Jan 2025, 20:35:39
 //  Auto updated?
 //    Yes
 //
@@ -122,7 +122,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amdex {
                     view.enacted.add(Selector::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
 
                     // With that done, make the "container" available
-                    self.handle.write(((self.id().into(), "utils".into()), "entry-count".into()), b"super_clever_code();").cast()?;
+                    self.handle.write(((self.id(), "utils"), "entry-count"), (self.id(), 'a'), b"super_clever_code();").cast()?;
 
                     // Done!
                     Ok(Poll::Ready(()))

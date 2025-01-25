@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    24 Jan 2025, 22:41:58
+//    25 Jan 2025, 21:18:48
 //  Auto updated?
 //    Yes
 //
@@ -526,7 +526,7 @@ impl<'s> StateGuard<'s> {
             },
 
             Trace::Dataplane(t) => match t {
-                TraceDataplane::Read { who, id, contents } => {
+                TraceDataplane::Read { who, id, context, contents } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[DATAPLN]").italic().black().bg(left_color));
@@ -534,13 +534,22 @@ impl<'s> StateGuard<'s> {
                     text.push_span(Span::from(format!("{who}")).bold());
                     text.push_span(" read variable ");
                     text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).bold().dark_gray());
-                    if contents.is_none() {
-                        text.push_span(" ");
-                        text.push_span(Span::from("!!!").white().on_red());
+                    text.push_span(" ");
+                    match (self.denot_cache.get(&(context.0.to_string(), context.1)), contents.is_some()) {
+                        (Some(Ok((denot, _))), true) => {
+                            if denot.is_valid() {
+                                text.push_span(Span::from("✓").bold().green());
+                            } else {
+                                text.push_span(Span::from("!!!").bold().white().on_red());
+                            }
+                        },
+                        (_, _) => {
+                            text.push_span(Span::from("!!!").bold().white().on_red());
+                        },
                     }
                     text
                 },
-                TraceDataplane::Write { who, id, new, contents: _ } => {
+                TraceDataplane::Write { who, id, context, new, contents: _ } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[DATAPLN]").italic().black().bg(left_color));
@@ -548,6 +557,19 @@ impl<'s> StateGuard<'s> {
                     text.push_span(Span::from(format!("{who}")).bold());
                     text.push_span(format!(" wrote to{} variable ", if *new { " new" } else { "" }));
                     text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).bold().dark_gray());
+                    text.push_span(" ");
+                    match self.denot_cache.get(&(context.0.to_string(), context.1)) {
+                        Some(Ok((denot, _))) => {
+                            if denot.is_valid() {
+                                text.push_span(Span::from("✓").bold().green());
+                            } else {
+                                text.push_span(Span::from("!!!").bold().white().on_red());
+                            }
+                        },
+                        _ => {
+                            text.push_span(Span::from("!!!").bold().white().on_red());
+                        },
+                    }
                     text
                 },
             },
@@ -860,7 +882,7 @@ impl<'s> StateGuard<'s> {
                 },
 
                 Trace::Dataplane(trace) => match trace {
-                    TraceDataplane::Read { who, id, contents } => {
+                    TraceDataplane::Read { who, id, context, contents } => {
                         // Prepare the layout
                         let scontents: Option<Cow<str>> = contents.as_ref().map(Cow::as_ref).map(String::from_utf8_lossy);
                         let lines = scontents
@@ -870,8 +892,18 @@ impl<'s> StateGuard<'s> {
                             .collect::<Vec<Line>>();
                         let lines = if !lines.is_empty() { lines } else { vec![Line::from("<no content>")] };
                         let text = Text::from(lines);
-                        let vrects = Layout::vertical([Constraint::Length(1); 3].into_iter().chain([Constraint::Length(2 + text.height() as u16)]))
-                            .split(block.inner(body_rects[1]));
+                        let denot: Result<&Denotation, &str> = match self.denot_cache.get(&(context.0.to_string(), context.1)) {
+                            Some(Ok((denot, _))) => Ok(denot),
+                            Some(Err(_)) => Err("FAILED TO EXTRACT POLICY!!!"),
+                            None => Err("NOT FOUND!!!"),
+                        };
+                        let vrects = Layout::vertical(
+                            [Constraint::Length(1); 5]
+                                .into_iter()
+                                .chain(if denot.is_ok() { Some(Constraint::Length(1)) } else { None }.into_iter())
+                                .chain([Constraint::Length(2 + text.height() as u16)]),
+                        )
+                        .split(block.inner(body_rects[1]));
 
                         // Write the info first
                         frame.render_widget(
@@ -897,22 +929,83 @@ impl<'s> StateGuard<'s> {
                             vrects[1],
                         );
 
+                        // Render the context
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Justified by : ");
+                                text.push_span(Span::from(format!("{} {}", context.0, context.1)).yellow());
+                                text.push_span(" ");
+                                match denot {
+                                    Ok(denot) => {
+                                        if denot.is_valid() {
+                                            text.push_span(Span::from("✓").bold().green());
+                                        } else {
+                                            text.push_span(Span::from("✘").bold().white().on_red());
+                                        }
+                                    },
+                                    Err(err) => {
+                                        text.push_span(Span::from(err).bold().white().on_red());
+                                    },
+                                }
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[3],
+                        );
+                        if let Ok(denot) = denot {
+                            frame.render_widget(
+                                Paragraph::new({
+                                    let mut text = Text::from(" - Effect : ");
+                                    let effect: GroundAtom = GroundAtom::Tuple(vec![
+                                        GroundAtom::Constant(SlickText::from_str(context.0.as_ref())),
+                                        GroundAtom::Constant(SlickText::from_str("reads")),
+                                        GroundAtom::Tuple(vec![
+                                            GroundAtom::Tuple(vec![
+                                                GroundAtom::Constant(SlickText::from_str(&id.as_ref().0.0)),
+                                                GroundAtom::Constant(SlickText::from_str(&id.as_ref().0.1)),
+                                            ]),
+                                            GroundAtom::Constant(SlickText::from_str(&id.as_ref().1)),
+                                        ]),
+                                    ]);
+                                    text.push_span(Span::from(format!("{effect:?}")).bold());
+                                    text.push_span(" ");
+                                    if <Denotation as InfallibleMap<Effect>>::contains_key(denot, &effect) {
+                                        text.push_span(Span::from("✓").bold().green());
+                                    } else {
+                                        text.push_span(Span::from("NOT IN ACTION!!!").bold().white().on_red());
+                                    }
+                                    text
+                                }),
+                                vrects[4],
+                            );
+                        }
+
                         // Render the payload
                         if contents.is_some() {
                             frame.render_widget(
                                 Paragraph::new(text).block(Block::bordered().title("Contents read").fg(right_color)).fg(right_color),
-                                vrects[3],
+                                vrects[if denot.is_ok() { 6 } else { 5 }],
                             );
                         }
                     },
-                    TraceDataplane::Write { who, id, new, contents } => {
+                    TraceDataplane::Write { who, id, context, new, contents } => {
                         // Prepare the layout
                         let scontents: Cow<str> = String::from_utf8_lossy(contents);
                         let lines = scontents.lines().map(|l| Line::raw(l.to_string())).collect::<Vec<Line>>();
                         let lines = if !lines.is_empty() { lines } else { vec![Line::from("<no content>")] };
                         let text = Text::from(lines);
-                        let vrects = Layout::vertical([Constraint::Length(1); 3].into_iter().chain([Constraint::Length(2 + text.height() as u16)]))
-                            .split(block.inner(body_rects[1]));
+                        let denot: Result<&Denotation, &str> = match self.denot_cache.get(&(context.0.to_string(), context.1)) {
+                            Some(Ok((denot, _))) => Ok(denot),
+                            Some(Err(_)) => Err("FAILED TO EXTRACT POLICY!!!"),
+                            None => Err("NOT FOUND!!!"),
+                        };
+                        let vrects = Layout::vertical(
+                            [Constraint::Length(1); 5]
+                                .into_iter()
+                                .chain(if denot.is_ok() { Some(Constraint::Length(1)) } else { None }.into_iter())
+                                .chain([Constraint::Length(2 + text.height() as u16)]),
+                        )
+                        .split(block.inner(body_rects[1]));
 
                         // Write the info first
                         frame.render_widget(
@@ -938,10 +1031,61 @@ impl<'s> StateGuard<'s> {
                             vrects[1],
                         );
 
+                        // Render the context
+                        frame.render_widget(
+                            Paragraph::new({
+                                let mut text = Text::from("Justified by : ");
+                                text.push_span(Span::from(format!("{} {}", context.0, context.1)).yellow());
+                                text.push_span(" ");
+                                match denot {
+                                    Ok(denot) => {
+                                        if denot.is_valid() {
+                                            text.push_span(Span::from("✓").bold().green());
+                                        } else {
+                                            text.push_span(Span::from("✘").bold().white().on_red());
+                                        }
+                                    },
+                                    Err(err) => {
+                                        text.push_span(Span::from(err).bold().white().on_red());
+                                    },
+                                }
+                                text
+                            })
+                            .fg(right_color),
+                            vrects[3],
+                        );
+                        if let Ok(denot) = denot {
+                            frame.render_widget(
+                                Paragraph::new({
+                                    let mut text = Text::from(" - Effect : ");
+                                    let effect: GroundAtom = GroundAtom::Tuple(vec![
+                                        GroundAtom::Constant(SlickText::from_str(context.0.as_ref())),
+                                        GroundAtom::Constant(SlickText::from_str("writes")),
+                                        GroundAtom::Tuple(vec![
+                                            GroundAtom::Tuple(vec![
+                                                GroundAtom::Constant(SlickText::from_str(&id.as_ref().0.0)),
+                                                GroundAtom::Constant(SlickText::from_str(&id.as_ref().0.1)),
+                                            ]),
+                                            GroundAtom::Constant(SlickText::from_str(&id.as_ref().1)),
+                                        ]),
+                                    ]);
+                                    text.push_span(Span::from(format!("{effect:?}")).bold());
+                                    text.push_span(" ");
+                                    if <Denotation as InfallibleMap<Effect>>::contains_key(denot, &effect) {
+                                        text.push_span(Span::from("✓").bold().green());
+                                    } else {
+                                        text.push_span(Span::from("NOT IN ACTION!!!").bold().white().on_red());
+                                    }
+                                    text
+                                }),
+                                vrects[4],
+                            );
+                        }
+
                         // Render the payload
                         frame.render_widget(
                             Paragraph::new(text).block(Block::bordered().title("Contents written").fg(right_color)).fg(right_color),
-                            vrects[3],
+                            vrects[if denot.is_ok() { 6 } else { 5 }],
                         );
                     },
                 },

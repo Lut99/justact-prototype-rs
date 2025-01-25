@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 11:01:12
 //  Last edited:
-//    22 Jan 2025, 11:00:50
+//    25 Jan 2025, 20:32:07
 //  Auto updated?
 //    Yes
 //
@@ -77,6 +77,7 @@ impl ScopedStoreHandle {
     ///
     /// # Arguments
     /// - `id`: The identifier (as a prefixed-by-author name) of the variable to read from.
+    /// - `context`: The ID of an enacted action that is supposed to justify this write.
     ///
     /// # Returns
     /// A slice of bytes representing the dataset's contents, or [`None`] if the given variable
@@ -86,7 +87,13 @@ impl ScopedStoreHandle {
     /// This function can error if it failed to write a trace of what happened.
     #[inline]
     #[track_caller]
-    pub fn read(&self, id: &((String, String), String)) -> Result<Option<Vec<u8>>, Error> { self.handle.read(&self.agent, id) }
+    pub fn read<'a>(
+        &self,
+        id: ((impl Into<String>, impl Into<String>), impl Into<String>),
+        context: (impl Into<Cow<'a, str>>, char),
+    ) -> Result<Option<Vec<u8>>, Error> {
+        self.handle.read(&self.agent, id, context)
+    }
 
     /// Writes the contents of a (new) variable.
     ///
@@ -95,14 +102,20 @@ impl ScopedStoreHandle {
     ///
     /// # Arguments
     /// - `id`: The identifier (as a prefixed-by-author name) of the variable to write to.
+    /// - `context`: The ID of an enacted action that is supposed to justify this write.
     /// - `contents`: Some bytes to write as payload.
     ///
     /// # Errors
     /// This function can error if it failed to write a trace of what happened.
     #[inline]
     #[track_caller]
-    pub fn write(&self, id: ((String, String), String), contents: impl Into<Vec<u8>>) -> Result<(), Error> {
-        self.handle.write(&self.agent, id, contents)
+    pub fn write<'a>(
+        &self,
+        id: ((impl Into<String>, impl Into<String>), impl Into<String>),
+        context: (impl Into<Cow<'a, str>>, char),
+        contents: impl Into<Vec<u8>>,
+    ) -> Result<(), Error> {
+        self.handle.write(&self.agent, id, context, contents)
     }
 }
 
@@ -168,6 +181,7 @@ impl StoreHandle {
     /// # Arguments
     /// - `who`: The agent who is reading the contents.
     /// - `id`: The identifier (as a prefixed-by-author name) of the variable to read from.
+    /// - `context`: The ID of an enacted action that is supposed to justify this write.
     ///
     /// # Returns
     /// A slice of bytes representing the dataset's contents, or [`None`] if the given variable
@@ -177,11 +191,18 @@ impl StoreHandle {
     /// This function can error if it failed to write a trace of what happened.
     #[inline]
     #[track_caller]
-    pub fn read(&self, who: impl AsRef<str>, id: &((String, String), String)) -> Result<Option<Vec<u8>>, Error> {
+    pub fn read<'a>(
+        &self,
+        who: impl AsRef<str>,
+        id: ((impl Into<String>, impl Into<String>), impl Into<String>),
+        context: (impl Into<Cow<'a, str>>, char),
+    ) -> Result<Option<Vec<u8>>, Error> {
         let who: &str = who.as_ref();
+        let id: ((String, String), String) = ((id.0.0.into(), id.0.1.into()), id.1.into());
+        let context: (Cow<'a, str>, char) = (context.0.into(), context.1);
 
         // Perform the read
-        let contents: Option<Vec<u8>> = { self.0.borrow().get(id).cloned() };
+        let contents: Option<Vec<u8>> = { self.0.borrow().get(&id).cloned() };
 
         // Log it
         TRACE_HANDLER
@@ -191,7 +212,8 @@ impl StoreHandle {
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
             .handle(Trace::Dataplane(TraceDataplane::Read {
                 who: who.into(),
-                id: Cow::Borrowed(id),
+                id: Cow::Owned(id),
+                context,
                 contents: contents.as_ref().map(Vec::as_slice).map(Cow::Borrowed),
             }))
             .map_err(|err| Error::TraceHandle { err })?;
@@ -208,14 +230,23 @@ impl StoreHandle {
     /// # Arguments
     /// - `who`: The agent who is writing the contents.
     /// - `id`: The identifier (as a prefixed-by-author name) of the variable to write to.
+    /// - `context`: The ID of an enacted action that is supposed to justify this write.
     /// - `contents`: Some bytes to write as payload.
     ///
     /// # Errors
     /// This function can error if it failed to write a trace of what happened.
     #[inline]
     #[track_caller]
-    pub fn write(&self, who: impl AsRef<str>, id: ((String, String), String), contents: impl Into<Vec<u8>>) -> Result<(), Error> {
+    pub fn write<'a>(
+        &self,
+        who: impl AsRef<str>,
+        id: ((impl Into<String>, impl Into<String>), impl Into<String>),
+        context: (impl Into<Cow<'a, str>>, char),
+        contents: impl Into<Vec<u8>>,
+    ) -> Result<(), Error> {
         let who: &str = who.as_ref();
+        let id: ((String, String), String) = ((id.0.0.into(), id.0.1.into()), id.1.into());
+        let context: (Cow<'a, str>, char) = (context.0.into(), context.1);
         let contents: Vec<u8> = contents.into();
 
         // Log it first, for efficiency purposes (it can't fail anyway*)
@@ -230,7 +261,8 @@ impl StoreHandle {
                 who: Cow::Borrowed(who),
                 id: Cow::Borrowed(&id),
                 new: store.contains_key(&id),
-                contents: Cow::Borrowed(contents.as_slice()),
+                context,
+                contents: Cow::Borrowed(&contents),
             }))
             .map_err(|err| Error::TraceHandle { err })?;
 

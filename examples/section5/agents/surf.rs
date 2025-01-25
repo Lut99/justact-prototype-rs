@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 14:23:12
 //  Last edited:
-//    24 Jan 2025, 23:05:08
+//    25 Jan 2025, 20:37:49
 //  Auto updated?
 //    Yes
 //
@@ -137,10 +137,11 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                     }
 
                     // Then do it!
-                    let _ = self.handle.read(&filter_consented_id).cast()?;
-                    let _ = self.handle.read(&patients_id).cast()?;
+                    let enact_id: (&str, char) = (super::bob::ID, 'a');
+                    let _ = self.handle.read(filter_consented_id, enact_id).cast()?;
+                    let _ = self.handle.read(patients_id, enact_id).cast()?;
                     // Sadly, we'll emulate the execution for now.
-                    self.handle.write(((super::bob::ID.into(), "step2".into()), "consented".into()), b"billy bob jones\nanakin skywalker").cast()?;
+                    self.handle.write(((super::bob::ID, "step2"), "consented"), enact_id, b"billy bob jones\nanakin skywalker").cast()?;
 
                     // Done!
                     Ok(Poll::Ready(()))
@@ -181,7 +182,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                 view.enacted.add(Selector::All, create_action('b', self.id(), agree.clone(), just)).cast()?;
 
                 // (and model the read)
-                let _ = self.handle.read(&((super::st_antonius::ID.into(), "patients-2024".into()), "patients".into())).cast()?;
+                let _ = self.handle.read(((super::st_antonius::ID, "patients-2024"), "patients"), (self.id(), 'b')).cast()?;
 
                 // Done :)
                 Ok(Poll::Ready(()))

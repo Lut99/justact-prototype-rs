@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:57:55
 //  Last edited:
-//    21 Jan 2025, 16:55:00
+//    25 Jan 2025, 20:27:52
 //  Auto updated?
 //    Yes
 //
@@ -104,9 +104,9 @@ pub enum TraceJustAct<'a> {
 #[cfg_attr(feature = "serde", serde(tag = "kind"))]
 pub enum TraceDataplane<'a> {
     /// Traces that somebody read from a variable.
-    Read { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, contents: Option<Cow<'a, [u8]>> },
+    Read { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, context: (Cow<'a, str>, char), contents: Option<Cow<'a, [u8]>> },
     /// Traces that somebody wrote to a variable.
-    Write { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, new: bool, contents: Cow<'a, [u8]> },
+    Write { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, context: (Cow<'a, str>, char), new: bool, contents: Cow<'a, [u8]> },
 }
 
 

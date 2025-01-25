@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 15:11:36
 //  Last edited:
-//    24 Jan 2025, 23:01:08
+//    25 Jan 2025, 20:36:13
 //  Auto updated?
 //    Yes
 //
@@ -181,7 +181,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
                         view.enacted.add(Selector::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
 
                         // Then update the data plane
-                        self.handle.read(&((self.id().into(), "count-patients".into()), "num-patients".into())).cast()?;
+                        self.handle.read(((self.id(), "count-patients"), "num-patients"), (self.id(), 'a')).cast()?;
 
                         // Amy's done!
                         Ok(Poll::Ready(()))
