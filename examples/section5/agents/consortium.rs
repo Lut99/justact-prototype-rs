@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    24 Jan 2025, 23:17:53
+//    26 Jan 2025, 18:15:24
 //  Auto updated?
 //    Yes
 //
@@ -104,7 +104,7 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                 let current_times = view.times.current().cast()?;
                 if !current_times.contains(&1) {
                     // Add the agreement
-                    let agree = Agreement { message: create_message(1, self.id(), include_str!("../slick/consortium-1.slick")), at: 1 };
+                    let agree = Agreement { message: create_message(1, self.id(), include_str!("../slick/consortium_1.slick")), at: 1 };
                     view.agreed.add(agree).cast()?;
 
                     // Update the timestamp
@@ -143,7 +143,7 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                     let current_times = view.times.current().cast()?;
                     if !current_times.contains(&1) {
                         // Add the agreement
-                        let agree = Agreement { message: create_message(1, self.id(), include_str!("../slick/consortium-1.slick")), at: 1 };
+                        let agree = Agreement { message: create_message(1, self.id(), include_str!("../slick/consortium_1.slick")), at: 1 };
                         view.agreed.add(agree).cast()?;
 
                         // Update the timestamp
@@ -162,7 +162,7 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                     }
 
                     // Push the amendment
-                    let agree = Agreement { message: create_message(2, self.id(), include_str!("../slick/consortium-2.slick")), at: 2 };
+                    let agree = Agreement { message: create_message(2, self.id(), include_str!("../slick/consortium_2.slick")), at: 2 };
                     view.agreed.add(agree).cast()?;
 
                     // Update the timestamp
@@ -189,7 +189,7 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
 
                 State5_4_5::BackForSeconds => {
                     // We'll have to re-publish the same agreement at time 3, then everything is fine!
-                    let agree = Agreement { message: create_message(2, self.id(), include_str!("../slick/consortium-2.slick")), at: 3 };
+                    let agree = Agreement { message: create_message(2, self.id(), include_str!("../slick/consortium_2.slick")), at: 3 };
                     view.agreed.add(agree).cast()?;
 
                     // Done with this example
