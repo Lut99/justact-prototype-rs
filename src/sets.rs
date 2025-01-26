@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:26:24
 //  Last edited:
-//    25 Jan 2025, 21:24:25
+//    26 Jan 2025, 17:38:44
 //  Auto updated?
 //    Yes
 //
@@ -14,8 +14,11 @@
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
+
+use thiserror::Error;
 
 use crate::wire::{Action, Agreement, Message};
 
@@ -42,24 +45,37 @@ pub type Statements = MapAsync<Arc<Message>>;
 
 
 
+/***** ERRORS *****/
+/// Errors emitted by the [`MapAsync`]([`view`](MapAsyncView)).
+#[derive(Debug, Error)]
+pub enum Error<I> {
+    /// An agent illegally stated a message out of their control.
+    #[error("Agent {agent:?} stated message {message:?} without being its author or knowing it")]
+    IllegalStatement { agent: String, message: I },
+}
+
+
+
+
+
 /***** HELPERS *****/
-/// Abstracts over both [`Actored`](justact::Actored) and [`Authored`](justact::Authored) objects.
+/// Abstracts over both [`Message`]s and [`Action`]s.
 trait Agented {
-    type Id: ?Sized + Eq + Hash;
+    type AgentId: ?Sized + Eq + Hash;
 
-    fn id(&self) -> &Self::Id;
+    fn agent_id(&self) -> &Self::AgentId;
 }
-impl<T: justact::Actored> Agented for T {
-    type Id = T::ActorId;
+impl Agented for Arc<Message> {
+    type AgentId = <Arc<Message> as justact::Authored>::AuthorId;
 
     #[inline]
-    fn id(&self) -> &Self::Id { <T as justact::Actored>::actor_id(self) }
+    fn agent_id(&self) -> &Self::AgentId { <Arc<Message> as justact::Authored>::author_id(self) }
 }
-impl<T: justact::Authored> Agented for T {
-    type Id = T::AuthorId;
+impl Agented for Action {
+    type AgentId = <Action as justact::Actored>::ActorId;
 
     #[inline]
-    fn id(&self) -> &Self::Id { <T as justact::Authored>::author_id(self) }
+    fn agent_id(&self) -> &Self::AgentId { <Action as justact::Actored>::actor_id(self) }
 }
 
 
@@ -211,9 +227,9 @@ impl<'s, 'i, E> justact::Map<E> for MapAsyncView<'s, 'i, E>
 where
     E: justact::Identifiable,
     E::Id: ToOwned,
-    <E::Id as ToOwned>::Owned: Eq + Hash,
+    <E::Id as ToOwned>::Owned: 'static + Debug + Eq + Hash,
 {
-    type Error = Infallible;
+    type Error = Error<<E::Id as ToOwned>::Owned>;
 
     fn get(&self, id: &<E as justact::Identifiable>::Id) -> Result<Option<&E>, Self::Error>
     where
@@ -235,16 +251,31 @@ where
 }
 impl<'s, 'i, E> justact::MapAsync<str, E> for MapAsyncView<'s, 'i, E>
 where
-    E: Clone + justact::Identifiable,
+    E: Clone + justact::Identifiable + Agented<AgentId = str>,
     E::Id: ToOwned,
-    <E::Id as ToOwned>::Owned: Eq + Hash,
+    <E::Id as ToOwned>::Owned: 'static + Debug + Eq + Hash,
 {
     #[inline]
     fn add(&mut self, selector: justact::Selector<&str>, elem: E) -> Result<(), Self::Error>
     where
         E: justact::Identifiable,
     {
-        // Check if this agent may publish an element with the given author
+        // Check if this agent may publish an element with associated author/actor
+        // This is OK if:
+        //  - They are the author/actor; or
+        //  - This message has already been stated by another agent and this agent knows it
+        if elem.agent_id() != self.id
+            && self
+                .parent
+                .views
+                .get(self.id)
+                .unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {:?}", self.id))
+                .values()
+                .find(|e| elem.id() == e.id())
+                .is_none()
+        {
+            return Err(Error::IllegalStatement { agent: self.id.into(), message: elem.id().to_owned() });
+        }
 
         // Then add the message to the selected agent's view
         // NOTE: Efficiency should be OK despite the clones everywhere, as we assume that messages

@@ -4,12 +4,15 @@
 //  Created:
 //    15 Jan 2025, 15:57:55
 //  Last edited:
-//    25 Jan 2025, 20:27:52
+//    26 Jan 2025, 18:04:02
 //  Auto updated?
 //    Yes
 //
 //  Description:
 //!   Defines some wrapping layers for properly generating a system trace.
+//!   
+//!   You should observe an error relating to Dan trying to send Amy's message without having
+//!   received it.
 //
 
 use std::borrow::Cow;
@@ -73,7 +76,6 @@ impl<E: error::Error> error::Error for Error<E> {
 /// Defines what may be traced in a [`TraceHandler`].
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(all(feature = "serde", not(feature = "dataplane")), serde(untagged))]
 pub enum Trace<'a> {
     /// Defines traces eminating from the JustAct framework.
     JustAct(TraceJustAct<'a>),

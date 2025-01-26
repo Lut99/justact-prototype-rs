@@ -28,6 +28,11 @@ name = "section5-4-5"
 path = "examples/section5/section5.4.5.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
+[[example]]
+name = "invalid-gossip"
+path = "examples/invalid/invalid_gossip.rs"
+required-features = ["log", "serde", "slick"]
+
 
 [dependencies]
 # bit-vec = "0.8.0"
