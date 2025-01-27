@@ -21,7 +21,7 @@ log = "0.4.22"
 thiserror = "2.0.3"
 
 datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["interpreter", "parser", "reserialize"], optional = true }
-justact = { git = "https://github.com/Lut99/justact-rs" }
+justact = { git = "https://github.com/Lut99/justact-rs", tag = "v0.1.0" }
 stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
 
 
