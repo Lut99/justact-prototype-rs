@@ -50,7 +50,7 @@ serde = { version = "1.0.217", features = ["derive", "rc"], optional = true }
 thiserror = "2.0.11"
 
 datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["interpreter", "parser", "reserialize"], optional = true }
-justact = { git = "https://github.com/Lut99/justact-rs", features = ["serde"], branch = "journal" }
+justact = { git = "https://github.com/Lut99/justact-rs", features = ["serde"] }
 slick = { git = "https://github.com/sirkibsirkib/slick", optional = true }
 # stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
 
