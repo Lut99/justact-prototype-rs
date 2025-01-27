@@ -1,6 +1,6 @@
 [package]
 name = "justact-prototype"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Tim Müller"]
 repository.workspace = true
