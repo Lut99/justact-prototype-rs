@@ -1,4 +1,7 @@
 # Data EXchange (DEX) Examples
+
+> Note that these examples are WIP
+
 This folder contains examples of a very, very simple data exchange platform where a user can submit work to a worker to do.
 
 It is a heavily simplified version of Brane that models the following agents:

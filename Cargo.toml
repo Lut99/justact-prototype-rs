@@ -1,6 +1,6 @@
 [package]
 name = "justact-prototype"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Tim Müller"]
 repository.workspace = true
@@ -33,10 +33,10 @@ name = "invalid-gossip"
 path = "examples/invalid/invalid_gossip.rs"
 required-features = ["log", "serde", "slick"]
 
-[[example]]
-name = "dex-read-data"
-path = "examples/dex/read_data.rs"
-required-features = ["dataplane", "log", "serde", "slick"]
+# [[example]]
+# name = "dex-read-data"
+# path = "examples/dex/read_data.rs"
+# required-features = ["dataplane", "log", "serde", "slick"]
 
 
 [dependencies]
