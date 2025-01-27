@@ -1,0 +1,7 @@
+// Statement (st-antonius 1).
+(st-antonius patients-2024) has output patients.
+(st-antonius patients-2024) ready.
+st-antonius controls ((st-antonius patients-2024) patients).
+
+(st-antonius patients-2024) executed.
+authorise (st-antonius patients-2024) in (st-antonius 1) by st-antonius.

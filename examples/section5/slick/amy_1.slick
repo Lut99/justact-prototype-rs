@@ -1,0 +1,5 @@
+// Statement (amy 1).
+(amy count-patients) has input ((amdex utils) entry-count).
+(amy count-patients) has input ((st-antonius patients-2024) patients).
+(amy count-patients) has output num-patients.
+(amy count-patients) ready.

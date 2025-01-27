@@ -1,38 +1,88 @@
 [package]
 name = "justact-prototype"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Tim Müller"]
-repository = "https://github.com/Lut99/justact-prototype-rs"
+repository.workspace = true
+license.workspace = true
 description = "Provides an implementation of a simple demo environment that simulates agents without threads or any of that fancy jazz."
 
 
 [[example]]
-name = "paper1"
-path = "examples/paper1.rs"
-required-features = ["datalog"]
+name = "section5-4-1"
+path = "examples/section5/section5.4.1.rs"
+required-features = ["dataplane", "log", "serde", "slick"]
+
+[[example]]
+name = "section5-4-2"
+path = "examples/section5/section5.4.2.rs"
+required-features = ["dataplane", "log", "serde", "slick"]
+
+[[example]]
+name = "section5-4-4"
+path = "examples/section5/section5.4.4.rs"
+required-features = ["dataplane", "log", "serde", "slick"]
+
+[[example]]
+name = "section5-4-5"
+path = "examples/section5/section5.4.5.rs"
+required-features = ["dataplane", "log", "serde", "slick"]
+
+[[example]]
+name = "invalid-gossip"
+path = "examples/invalid/invalid_gossip.rs"
+required-features = ["log", "serde", "slick"]
+
+# [[example]]
+# name = "dex-read-data"
+# path = "examples/dex/read_data.rs"
+# required-features = ["dataplane", "log", "serde", "slick"]
 
 
 [dependencies]
-bit-vec = "0.8.0"
-console = "0.15.8"
+# bit-vec = "0.8.0"
+# console = "0.15.8"
 error-trace = { git = "https://github.com/Lut99/error-trace-rs" }
-log = "0.4.22"
-thiserror = "2.0.3"
+log = { version = "0.4.25", optional = true }
+nom = { version = "7.1.3", optional = true }
+# rand = "0.8.5"
+serde = { version = "1.0.217", features = ["derive", "rc"], optional = true }
+thiserror = "2.0.11"
 
 datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["interpreter", "parser", "reserialize"], optional = true }
-justact = { git = "https://github.com/Lut99/justact-rs", tag = "v0.1.0" }
-stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
+justact = { git = "https://github.com/Lut99/justact-rs", features = ["serde"] }
+slick = { git = "https://github.com/sirkibsirkib/slick", optional = true }
+# stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
 
 
 [dev-dependencies]
-clap = { version = "4.5.21", features = ["derive"] }
-datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["macros"] }
+clap = { version = "4.5.27", features = ["derive"] }
 humanlog = { git = "https://github.com/Lut99/humanlog-rs" }
+serde_json = "1.0.137"
 
 
 [features]
 default = []
 
-all-lang = ["datalog"]
+all-lang = ["datalog", "slick"]
 datalog = ["dep:datalog"]
+slick = ["dep:nom", "dep:slick"]
+
+dataplane = []
+
+lang-macros = ["datalog/macros"]
+
+log = ["dep:log"]
+serde = ["dep:serde"]
+
+
+
+[workspace]
+resolver = "2"
+members = [
+    "bin/inspector"
+]
+
+[workspace.package]
+repository = "https://github.com/Lut99/justact-prototype-rs"
+license = "Apache-2.0"
