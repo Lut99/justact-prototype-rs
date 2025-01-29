@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:50:19
 //  Last edited:
-//    24 Jan 2025, 23:00:26
+//    29 Jan 2025, 23:35:20
 //  Auto updated?
 //    Yes
 //
@@ -13,7 +13,6 @@
 //
 
 // Declare the agent modules
-pub mod amdex;
 pub mod amy;
 pub mod bob;
 pub mod consortium;
@@ -25,7 +24,6 @@ pub mod surf;
 use std::hash::Hash;
 use std::task::Poll;
 
-pub use amdex::Amdex;
 pub use amy::Amy;
 pub use bob::Bob;
 pub use consortium::Consortium;
@@ -49,9 +47,6 @@ mod justact {
 /// Defines an error abstracting over all agent errors.
 #[derive(Debug, Error)]
 pub enum Error {
-    /// The `amdex` agent failed.
-    #[error("The `amdex`-agent failed")]
-    Amdex(#[source] amdex::Error),
     /// The `amy` agent failed.
     #[error("The `amy`-agent failed")]
     Amy(#[source] amy::Error),
@@ -160,7 +155,6 @@ pub enum Script {
 /***** LIBRARY *****/
 /// Super-agent abstracting over the individual agents.
 pub enum Agent {
-    Amdex(Amdex),
     Amy(Amy),
     Bob(Bob),
     Dan(Dan),
@@ -173,7 +167,6 @@ impl justact::Identifiable for Agent {
     #[inline]
     fn id(&self) -> &Self::Id {
         match self {
-            Self::Amdex(a) => a.id(),
             Self::Amy(a) => a.id(),
             Self::Bob(b) => b.id(),
             Self::Dan(d) => d.id(),
@@ -196,7 +189,6 @@ impl justact::Agent<(String, u32), (String, char), str, u64> for Agent {
         SA: justact::ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         match self {
-            Self::Amdex(a) => a.poll(view).map_err(Error::Amdex),
             Self::Amy(a) => a.poll(view).map_err(Error::Amy),
             Self::Bob(b) => b.poll(view).map_err(Error::Bob),
             Self::Dan(d) => d.poll(view).map_err(Error::Dan),
@@ -204,10 +196,6 @@ impl justact::Agent<(String, u32), (String, char), str, u64> for Agent {
             Self::Surf(s) => s.poll(view).map_err(Error::Surf),
         }
     }
-}
-impl From<Amdex> for Agent {
-    #[inline]
-    fn from(value: Amdex) -> Self { Self::Amdex(value) }
 }
 impl From<Amy> for Agent {
     #[inline]

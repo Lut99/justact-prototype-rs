@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 16:57:21
 //  Last edited:
-//    29 Jan 2025, 22:36:30
+//    29 Jan 2025, 23:35:14
 //  Auto updated?
 //    Yes
 //
@@ -17,7 +17,7 @@ mod agents;
 mod error;
 mod trace;
 
-use agents::{Agent, Amdex, Consortium, Script, StAntonius, Surf};
+use agents::{Agent, Consortium, Script, StAntonius, Surf};
 use clap::Parser;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
@@ -67,11 +67,7 @@ fn main() {
 
     // Create the agents
     let dataplane = StoreHandle::new();
-    let agents: [Agent; 3] = [
-        Amdex::new(Script::Section5_4_4, &dataplane).into(),
-        StAntonius::new(Script::Section5_4_4, &dataplane).into(),
-        Surf::new(Script::Section5_4_4, &dataplane).into(),
-    ];
+    let agents: [Agent; 2] = [StAntonius::new(Script::Section5_4_4, &dataplane).into(), Surf::new(Script::Section5_4_4, &dataplane).into()];
     let sync = Consortium::new(Script::Section5_4_4, &dataplane);
 
     // Run the runtime!

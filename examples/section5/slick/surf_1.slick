@@ -1,2 +1,4 @@
 // Statement (surf 1).
-(amy count-patients) executed.
+(surf utils) has output entry-count.
+(surf utils) ready.
+(surf utils) executed.

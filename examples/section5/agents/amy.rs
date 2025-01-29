@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 15:11:36
 //  Last edited:
-//    29 Jan 2025, 15:47:36
+//    29 Jan 2025, 23:38:50
 //  Auto updated?
 //    Yes
 //
@@ -105,10 +105,10 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
                 match self.state {
                     State::CountPatients => {
                         // Amy waits until she sees her package of interest pop into existance
-                        // I.e., she waits until she sees: `(amdex utils) ready.`
+                        // I.e., she waits until she sees: `(surf utils) ready.`
                         let pkg = GroundAtom::Tuple(vec![
                             GroundAtom::Tuple(vec![
-                                GroundAtom::Constant(Text::from_str(super::amdex::ID)),
+                                GroundAtom::Constant(Text::from_str(super::surf::ID)),
                                 GroundAtom::Constant(Text::from_str("utils")),
                             ]),
                             GroundAtom::Constant(Text::from_str("ready")),
@@ -162,7 +162,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
                         // Now we wait until we have all the required messages
                         let mut just: MessageSet<SM> = MessageSet::new();
                         for msg in [
-                            (super::amdex::ID.into(), 1),
+                            (super::surf::ID.into(), 1),
                             (super::amy::ID.into(), 1),
                             (super::amy::ID.into(), 2),
                             (super::st_antonius::ID.into(), 1),

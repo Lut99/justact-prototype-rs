@@ -34,4 +34,4 @@ error (authorised Task with input Variable in another message) if authorise Task
                                                                and ( Task has input Variable ) within Msg2 and diff { Msg1 Msg2 }.
 
 // The new rule!
-(amdex utils) involves amdex.
+(surf utils) involves surf.

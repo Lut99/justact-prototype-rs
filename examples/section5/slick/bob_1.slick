@@ -7,7 +7,7 @@
 (bob step2) has output consented.
 (bob step2) ready.
 
-(bob step3) has input ((amdex utils) entry-count).
+(bob step3) has input ((surf utils) entry-count).
 (bob step3) has input ((bob step2) consented).
 (bob step3) has output num-consented.
 (bob step3) ready.

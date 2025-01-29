@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 11:04:07
 //  Last edited:
-//    29 Jan 2025, 15:47:33
+//    29 Jan 2025, 23:35:46
 //  Auto updated?
 //    Yes
 //
@@ -132,7 +132,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Bob {
 
                     // Ensure that our own message and the "code/data" messages are available
                     let mut just: MessageSet<SM> = MessageSet::new();
-                    for msg in [(super::amdex::ID.into(), 1), (self.id().into(), 1), (super::st_antonius::ID.into(), 1)] {
+                    for msg in [(super::surf::ID.into(), 1), (self.id().into(), 1), (super::st_antonius::ID.into(), 1)] {
                         match view.stated.get(&msg).cast()? {
                             Some(msg) => {
                                 just.add(msg.clone());

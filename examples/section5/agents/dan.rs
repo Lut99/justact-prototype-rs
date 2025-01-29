@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 09:25:37
 //  Last edited:
-//    29 Jan 2025, 15:47:26
+//    29 Jan 2025, 23:38:53
 //  Auto updated?
 //    Yes
 //
@@ -83,7 +83,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Dan {
             Script::Section5_4_1 => {
                 // Dan waits for all the agreements and messages that precede him in the paper to be sent first
                 let target_agree: (String, u32) = ("consortium".into(), 1);
-                let target_msgs: [(String, u32); 3] = [("amdex".into(), 1), ("amy".into(), 1), ("st-antonius".into(), 1)];
+                let target_msgs: [(String, u32); 3] = [("surf".into(), 1), ("amy".into(), 1), ("st-antonius".into(), 1)];
                 if !view.agreed.contains_key(&target_agree).cast()? {
                     // Keep waiting
                     return Ok(Poll::Pending);

@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 14:23:12
 //  Last edited:
-//    29 Jan 2025, 15:47:11
+//    29 Jan 2025, 23:39:51
 //  Auto updated?
 //    Yes
 //
@@ -39,9 +39,59 @@ pub const ID: &'static str = "surf";
 
 
 /***** HELPERS *****/
+/// The overall SURF state.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum State {
+    Section5_4_1(State5_4_1),
+    Section5_4_2(State5_4_2),
+    // No state necessary tho!
+    Section5_4_4,
+}
+impl State {
+    /// Forces interpretation as a section 5.4.1 state.
+    ///
+    /// # Returns
+    /// A [`State5_4_1`] describing the state for the first example.
+    ///
+    /// # Panics
+    /// This function panics if this is not for the first state.
+    #[inline]
+    fn section5_4_1(self) -> State5_4_1 {
+        if let Self::Section5_4_1(state) = self { state } else { panic!("Cannot unwrap a non-`State::Section5_4_1` as one") }
+    }
+
+    /// Forces interpretation as a section 5.4.2 state.
+    ///
+    /// # Returns
+    /// A [`State5_4_2`] describing the state for the first example.
+    ///
+    /// # Panics
+    /// This function panics if this is not for the first state.
+    #[inline]
+    fn section5_4_2(self) -> State5_4_2 {
+        if let Self::Section5_4_2(state) = self { state } else { panic!("Cannot unwrap a non-`State::Section5_4_2` as one") }
+    }
+}
+
+/// Defines SURF's state for section 5.4.1.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum State5_4_1 {
+    /// We proclaim we will publish the utils code.
+    PublishEntryCount,
+    /// We justify the entry count and then do the work.
+    DoPublish,
+    /// We proclaim we will publish the utils code.
+    ExecuteAmyTask,
+}
+
 /// Defines SURF's state for section 5.4.2.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum State5_4_2 {
+    /// We proclaim we will publish the utils code.
+    PublishEntryCount,
+    /// We justify the entry count and then do the work.
+    DoPublish,
+
     /// Going to announce we'll execute step 2.
     Execute,
     /// Executing step 2.
@@ -56,7 +106,7 @@ enum State5_4_2 {
 /// The `surf`-agent from section 5.4.1 & 5.4.2.
 pub struct Surf {
     script: Script,
-    state:  State5_4_2,
+    state:  State,
     handle: ScopedStoreHandle,
 }
 impl Surf {
@@ -72,7 +122,18 @@ impl Surf {
     /// A new Surf agent.
     #[inline]
     #[allow(unused)]
-    pub fn new(script: Script, handle: &StoreHandle) -> Self { Self { script, state: State5_4_2::Execute, handle: handle.scope(ID) } }
+    pub fn new(script: Script, handle: &StoreHandle) -> Self {
+        Self {
+            script,
+            state: match script {
+                Script::Section5_4_1 => State::Section5_4_1(State5_4_1::PublishEntryCount),
+                Script::Section5_4_2 => State::Section5_4_2(State5_4_2::PublishEntryCount),
+                Script::Section5_4_4 => State::Section5_4_4,
+                _ => unreachable!(),
+            },
+            handle: handle.scope(ID),
+        }
+    }
 }
 impl Identifiable for Surf {
     type Id = str;
@@ -95,30 +156,94 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
     {
         // Decide which script to execute
         match self.script {
-            Script::Section5_4_1 => {
-                // SURF publishes that they do Amy's task as soon as it's available.
-                let target_id: (String, u32) = (super::amy::ID.into(), 1);
-                if view.stated.contains_key(&target_id).cast()? {
-                    // Publish ours
+            Script::Section5_4_1 => match self.state.section5_4_1() {
+                State5_4_1::PublishEntryCount => {
+                    // The surf agent can publish immediately, it doesn't yet need the agreement for just
+                    // stating.
                     view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/surf_1.slick"))).cast()?;
-                    return Ok(Poll::Ready(()));
-                }
+                    self.state = State::Section5_4_1(State5_4_1::DoPublish);
+                    Ok(Poll::Pending)
+                },
+                State5_4_1::DoPublish => {
+                    // We will now try to justify our work. So, let's first wait for the agreement...
+                    let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
+                    let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
+                        Some(agree) => agree,
+                        None => return Ok(Poll::Pending),
+                    };
+                    if !view.times.current().cast()?.contains(&agree.at) {
+                        return Ok(Poll::Pending);
+                    }
 
-                // Else, keep waiting
-                Ok(Poll::Pending)
+                    // Then we justify using our own message only.
+                    let surf_1_id: (String, u32) = (self.id().into(), 1);
+                    let just: MessageSet<SM> = MessageSet::from(view.stated.get(&surf_1_id).cast()?.cloned());
+                    view.enacted.add(Recipient::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
+
+                    // With that done, make the "container" available
+                    self.handle.write(((self.id(), "utils"), "entry-count"), (self.id(), 'a'), b"super_clever_code();").cast()?;
+
+                    // Done!
+                    self.state = State::Section5_4_1(State5_4_1::ExecuteAmyTask);
+                    Ok(Poll::Pending)
+                },
+
+                State5_4_1::ExecuteAmyTask => {
+                    // SURF publishes that they do Amy's task as soon as it's available.
+                    let target_id: (String, u32) = (super::amy::ID.into(), 1);
+                    if view.stated.contains_key(&target_id).cast()? {
+                        // Publish ours
+                        view.stated.add(Recipient::All, create_message(2, self.id(), include_str!("../slick/surf_2.slick"))).cast()?;
+                        return Ok(Poll::Ready(()));
+                    }
+
+                    // Else, keep waiting
+                    Ok(Poll::Pending)
+                },
             },
 
-            Script::Section5_4_2 => match self.state {
+            Script::Section5_4_2 => match self.state.section5_4_2() {
+                State5_4_2::PublishEntryCount => {
+                    // The surf agent can publish immediately, it doesn't yet need the agreement for just
+                    // stating.
+                    view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/surf_1.slick"))).cast()?;
+                    self.state = State::Section5_4_2(State5_4_2::DoPublish);
+                    Ok(Poll::Pending)
+                },
+                State5_4_2::DoPublish => {
+                    // We will now try to justify our work. So, let's first wait for the agreement...
+                    let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
+                    let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
+                        Some(agree) => agree,
+                        None => return Ok(Poll::Pending),
+                    };
+                    if !view.times.current().cast()?.contains(&agree.at) {
+                        return Ok(Poll::Pending);
+                    }
+
+                    // Then we justify using our own message only.
+                    let surf_1_id: (String, u32) = (self.id().into(), 1);
+                    let just: MessageSet<SM> = MessageSet::from(view.stated.get(&surf_1_id).cast()?.cloned());
+                    view.enacted.add(Recipient::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
+
+                    // With that done, make the "container" available
+                    self.handle.write(((self.id(), "utils"), "entry-count"), (self.id(), 'a'), b"super_clever_code();").cast()?;
+
+                    // Done!
+                    self.state = State::Section5_4_2(State5_4_2::Execute);
+                    Ok(Poll::Pending)
+                },
+
                 State5_4_2::Execute => {
                     // After observing Bob's message, SURF decides (and synchronizes with the others)
                     // they can do step 2. So they do ONCE the required data is available.
                     let target_id: (String, u32) = (super::bob::ID.into(), 1);
                     if view.stated.contains_key(&target_id).cast()? {
                         // Publish ours
-                        view.stated.add(Recipient::All, create_message(2, self.id(), include_str!("../slick/surf_2.slick"))).cast()?;
+                        view.stated.add(Recipient::All, create_message(3, self.id(), include_str!("../slick/surf_3.slick"))).cast()?;
 
                         // Move to the next state
-                        self.state = State5_4_2::DoStep2;
+                        self.state = State::Section5_4_2(State5_4_2::DoStep2);
                     }
                     Ok(Poll::Pending)
                 },
@@ -174,7 +299,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                 }
 
                 // OK, now state our own execution...
-                let msg: SM = create_message(3, self.id(), include_str!("../slick/surf_3.slick"));
+                let msg: SM = create_message(4, self.id(), include_str!("../slick/surf_4.slick"));
                 just.add(msg.clone());
                 view.stated.add(Recipient::All, msg).cast()?;
 
