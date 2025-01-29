@@ -4,7 +4,7 @@
 //  Created:
 //    19 Dec 2024, 12:09:23
 //  Last edited:
-//    22 Jan 2025, 13:41:48
+//    29 Jan 2025, 22:04:32
 //  Auto updated?
 //    Yes
 //
@@ -40,7 +40,7 @@ pub enum SyntaxError {
     Iter {
         what: &'static str,
         #[source]
-        err:  Box<dyn Error>,
+        err:  Box<dyn 'static + Send + Error>,
     },
     #[error("Failed to parse the input as valid Slick")]
     Slick {

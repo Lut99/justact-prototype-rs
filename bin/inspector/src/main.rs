@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 11:27:25
 //  Last edited:
-//    23 Jan 2025, 13:05:04
+//    29 Jan 2025, 21:43:26
 //  Auto updated?
 //    Yes
 //
@@ -13,7 +13,7 @@
 //
 
 mod app;
-mod trace;
+mod event_iter;
 mod widgets;
 
 use std::io::{Result as IResult, Write};

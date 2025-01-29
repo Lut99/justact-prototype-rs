@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 11:01:12
 //  Last edited:
-//    25 Jan 2025, 20:32:07
+//    29 Jan 2025, 22:37:26
 //  Auto updated?
 //    Yes
 //
@@ -21,7 +21,8 @@ use std::rc::Rc;
 
 use thiserror::Error;
 
-use crate::io::{TRACE_HANDLER, Trace, TraceDataplane};
+use crate::auditing::{Event, EventData};
+use crate::io::EVENT_HANDLER;
 
 
 /***** ERRORS *****/
@@ -32,7 +33,7 @@ pub enum Error {
     #[error("Failed to handle trace with registered handler")]
     TraceHandle {
         #[source]
-        err: Box<dyn error::Error>,
+        err: Box<dyn 'static + Send + error::Error>,
     },
 }
 
@@ -205,12 +206,12 @@ impl StoreHandle {
         let contents: Option<Vec<u8>> = { self.0.borrow().get(&id).cloned() };
 
         // Log it
-        TRACE_HANDLER
+        EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::Dataplane(TraceDataplane::Read {
+            .handle(Event::Data(EventData::Read {
                 who: who.into(),
                 id: Cow::Owned(id),
                 context,
@@ -252,12 +253,12 @@ impl StoreHandle {
         // Log it first, for efficiency purposes (it can't fail anyway*)
         // * Famous last words
         let mut store = self.0.borrow_mut();
-        TRACE_HANDLER
+        EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::Dataplane(TraceDataplane::Write {
+            .handle(Event::Data(EventData::Write {
                 who: Cow::Borrowed(who),
                 id: Cow::Borrowed(&id),
                 new: store.contains_key(&id),

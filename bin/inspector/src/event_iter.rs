@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 11:43:30
 //  Last edited:
-//    17 Jan 2025, 17:33:26
+//    29 Jan 2025, 21:44:01
 //  Auto updated?
 //    Yes
 //
@@ -14,7 +14,7 @@
 
 use std::io::ErrorKind;
 
-use justact_prototype::io::Trace;
+use justact_prototype::auditing::Event;
 use log::debug;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt as _, BufReader};
@@ -24,6 +24,12 @@ use tokio::io::{AsyncRead, AsyncReadExt as _, BufReader};
 /// Defines errors yielded by the [`BraceIter`].
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("{}:{}: Failed to deserialize event", pos.0, pos.1)]
+    EventDeserialize {
+        pos: (usize, usize),
+        #[source]
+        err: serde_json::Error,
+    },
     #[error("{}:{}: Expected closing brance '}}' for opening brace at {}:{}", close.0, close.1, open.0, open.1 )]
     MissingClosingBrace { open: (usize, usize), close: (usize, usize) },
     #[error("Failed to read from {what}")]
@@ -31,12 +37,6 @@ pub enum Error {
         what: String,
         #[source]
         err:  std::io::Error,
-    },
-    #[error("{}:{}: Failed to deserialize trace", pos.0, pos.1)]
-    TraceDeserialize {
-        pos: (usize, usize),
-        #[source]
-        err: serde_json::Error,
     },
     #[error("{}:{}: Encountered unexpected character {c:?}", pos.0, pos.1)]
     UnexpectedChar { pos: (usize, usize), c: String },
@@ -46,12 +46,12 @@ pub enum Error {
 
 
 
-/***** HELPERS *****/
+/***** LIBRARY *****/
 /// Iterator that will read chunks wrapped in `{}` from a given `R`eader.
 ///
 /// Will generate errors if other things were found in between that aren't whitespaces, or those
-/// things in braces aren't [`Trace`]s.
-pub struct TraceIter<R> {
+/// things in braces aren't [`Event`]s.
+pub struct EventIter<R> {
     /// Some description of what we're reading.
     what:   String,
     /// The reader to read from.
@@ -61,15 +61,15 @@ pub struct TraceIter<R> {
 }
 
 // Constructors
-impl<R> TraceIter<R>
+impl<R> EventIter<R>
 where
     R: AsyncRead + Unpin,
 {
-    /// Constructor for the TraceIter.
+    /// Constructor for the EventIter.
     ///
     /// # Arguments
     /// - `what`: Some name (path or otherwise) that describes the `input` (used for debugging purposes only).
-    /// - `input`: Some [`Read`]er from which to read [`Trace`]s.
+    /// - `input`: Some [`Read`]er from which to read [`Event`]s.
     ///
     /// # Returns
     /// A new BraceIter that will yield every pair of curly braces in the input text, or errors
@@ -79,7 +79,7 @@ where
 }
 
 // Reading
-impl<R> TraceIter<R>
+impl<R> EventIter<R>
 where
     R: AsyncRead + Unpin,
 {
@@ -113,12 +113,12 @@ where
 }
 
 // Iteration
-impl<R> TraceIter<R>
+impl<R> EventIter<R>
 where
     R: AsyncRead + Unpin,
 {
     /// Yields the next item in the iterator, as long as supply lasts.
-    pub async fn next(&mut self) -> Option<Result<Trace<'static>, Error>> {
+    pub async fn next(&mut self) -> Option<Result<Event<'static>, Error>> {
         // Start to search for the next '{'
         let mut buf: String = String::with_capacity(32);
         loop {
@@ -149,9 +149,9 @@ where
                                 // If we have parity, we have a (potential) trace!
                                 if depth == 0 {
                                     debug!("Found raw trace: {buf:?}");
-                                    match serde_json::from_str::<Trace<'static>>(&buf) {
+                                    match serde_json::from_str::<Event<'static>>(&buf) {
                                         Ok(trace) => return Some(Ok(trace)),
-                                        Err(err) => return Some(Err(Error::TraceDeserialize { pos: open_pos, err })),
+                                        Err(err) => return Some(Err(Error::EventDeserialize { pos: open_pos, err })),
                                     }
                                 }
                             },

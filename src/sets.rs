@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:26:24
 //  Last edited:
-//    29 Jan 2025, 15:46:37
+//    29 Jan 2025, 22:05:13
 //  Auto updated?
 //    Yes
 //
@@ -227,7 +227,7 @@ impl<'s, 'i, E> justact::Map<E> for MapAsyncView<'s, 'i, E>
 where
     E: justact::Identifiable,
     E::Id: ToOwned,
-    <E::Id as ToOwned>::Owned: 'static + Debug + Eq + Hash,
+    <E::Id as ToOwned>::Owned: 'static + Send + Debug + Eq + Hash,
 {
     type Error = Error<<E::Id as ToOwned>::Owned>;
 
@@ -253,7 +253,7 @@ impl<'s, 'i, E> justact::MapAsync<str, E> for MapAsyncView<'s, 'i, E>
 where
     E: Clone + justact::Identifiable + Agented<AgentId = str>,
     E::Id: ToOwned,
-    <E::Id as ToOwned>::Owned: 'static + Debug + Eq + Hash,
+    <E::Id as ToOwned>::Owned: 'static + Send + Debug + Eq + Hash,
 {
     #[inline]
     fn add(&mut self, selector: justact::Recipient<&str>, elem: E) -> Result<(), Self::Error>

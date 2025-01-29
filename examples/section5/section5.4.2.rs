@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 16:57:21
 //  Last edited:
-//    23 Jan 2025, 11:48:40
+//    29 Jan 2025, 22:36:24
 //  Auto updated?
 //    Yes
 //
@@ -63,7 +63,7 @@ fn main() {
     info!("{} - v{}", env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"));
 
     // Setup the trace callback
-    justact_prototype::io::register_trace_handler(trace::StdoutTraceHandler);
+    justact_prototype::io::register_event_handler(trace::StdoutEventHandler);
 
     // Create the agents
     let dataplane = StoreHandle::new();

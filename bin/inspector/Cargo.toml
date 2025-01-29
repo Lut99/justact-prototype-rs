@@ -29,3 +29,5 @@ justact-prototype = { path = "../..", features = ["dataplane", "serde", "slick"]
 
 [features]
 default = []
+
+log = ["justact-prototype/log"]

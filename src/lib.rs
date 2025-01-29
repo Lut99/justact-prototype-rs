@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:13:37
 //  Last edited:
-//    21 Jan 2025, 11:01:47
+//    29 Jan 2025, 21:15:51
 //  Auto updated?
 //    Yes
 //
@@ -13,6 +13,7 @@
 //
 
 // Declare modules
+pub mod auditing;
 #[cfg(feature = "dataplane")]
 pub mod dataplane;
 pub mod io;

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:57:55
 //  Last edited:
-//    29 Jan 2025, 15:46:58
+//    29 Jan 2025, 22:33:42
 //  Auto updated?
 //    Yes
 //
@@ -20,6 +20,7 @@ use std::error;
 use std::fmt::{Display, Formatter, Result as FResult};
 use std::sync::{Arc, OnceLock, RwLock};
 
+use crate::auditing::{Event, EventControl};
 use crate::sets::{Agreements, MapAsync, MapAsyncView, Times};
 use crate::wire::{Action, Agreement, Message};
 
@@ -33,28 +34,28 @@ mod justact {
 
 
 /***** GLOBALS *****/
-/// Defines \*some\* [`TraceHandler`] that will handle trace callbacks.
-pub(crate) static TRACE_HANDLER: OnceLock<RwLock<Box<dyn TraceHandler>>> = OnceLock::new();
+/// Defines \*some\* [`EventHandler`] that will handle trace callbacks.
+pub(crate) static EVENT_HANDLER: OnceLock<RwLock<Box<dyn EventHandler>>> = OnceLock::new();
 
 
 
 
 
 /***** ERRORS *****/
-/// Defines errors that are emitted by the [`TraceHandler`].
+/// Defines errors that are emitted by the [`EventHandler`].
 #[derive(Debug)]
 pub enum Error<E> {
     /// It's the error of the inner one.
     Inner(E),
     /// Failed to handle a trace.
-    TraceHandle { err: Box<dyn error::Error> },
+    EventHandle { err: Box<dyn 'static + Send + error::Error> },
 }
 impl<E: Display> Display for Error<E> {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         match self {
             Self::Inner(err) => err.fmt(f),
-            Self::TraceHandle { .. } => write!(f, "Failed to handle trace with registered handler"),
+            Self::EventHandle { .. } => write!(f, "Failed to handle trace with registered handler"),
         }
     }
 }
@@ -63,7 +64,7 @@ impl<E: error::Error> error::Error for Error<E> {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
             Self::Inner(err) => err.source(),
-            Self::TraceHandle { err } => Some(&**err),
+            Self::EventHandle { err } => Some(&**err),
         }
     }
 }
@@ -73,58 +74,18 @@ impl<E: error::Error> error::Error for Error<E> {
 
 
 /***** INTERFACES *****/
-/// Defines what may be traced in a [`TraceHandler`].
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub enum Trace<'a> {
-    /// Defines traces eminating from the JustAct framework.
-    JustAct(TraceJustAct<'a>),
-    /// Defines traces eminating from the Dataplane framework.
-    #[cfg(feature = "dataplane")]
-    Dataplane(TraceDataplane<'a>),
-}
-
-/// Defines what may be traced by the JustAct-part of the framework (governance).
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(feature = "serde", serde(tag = "kind"))]
-pub enum TraceJustAct<'a> {
-    /// Traces the addition of a new agreement.
-    AddAgreement { agree: Agreement },
-    /// Traces the advancement of the current time.
-    AdvanceTime { timestamp: u64 },
-    /// Traces the enacting of an action.
-    EnactAction { who: Cow<'a, str>, to: justact::Recipient<Cow<'a, str>>, action: Action },
-    /// States a new message.
-    StateMessage { who: Cow<'a, str>, to: justact::Recipient<Cow<'a, str>>, msg: Arc<Message> },
-}
-
-/// Defines what may be traced by the dataplane-part of the framework (governance).
-#[derive(Clone, Debug)]
-#[cfg(feature = "dataplane")]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(feature = "serde", serde(tag = "kind"))]
-pub enum TraceDataplane<'a> {
-    /// Traces that somebody read from a variable.
-    Read { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, context: (Cow<'a, str>, char), contents: Option<Cow<'a, [u8]>> },
-    /// Traces that somebody wrote to a variable.
-    Write { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, context: (Cow<'a, str>, char), new: bool, contents: Cow<'a, [u8]> },
-}
-
-
-
 /// Defines a general trace handler implementation.
-pub trait TraceHandler: 'static + Send + Sync {
+pub trait EventHandler: 'static + Send + Sync {
     /// Handles the occurrance of a trace.
     ///
     /// Typically, the handler would either show it to the user or write it to a file.
     ///
     /// # Arguments
-    /// - `trace`: The [`Trace`] to handle.
+    /// - `trace`: The [`Event`] to handle.
     ///
     /// # Errors
     /// This trace is allowed to error, but it should return it as a dynamic (`'static`) object.
-    fn handle(&self, trace: Trace) -> Result<(), Box<dyn error::Error>>;
+    fn handle(&self, trace: Event) -> Result<(), Box<dyn 'static + Send + error::Error>>;
 }
 
 
@@ -132,11 +93,11 @@ pub trait TraceHandler: 'static + Send + Sync {
 
 
 /***** LIBRARY FUNCTIONS *****/
-/// Registers a particular [`TraceHandler`] such that it handles traces.
+/// Registers a particular [`EventHandler`] such that it handles traces.
 ///
 /// # Arguments
-/// - `handler`: The [`TraceHandler`] to register.
-pub fn register_trace_handler(handler: impl TraceHandler) { let _ = TRACE_HANDLER.set(RwLock::new(Box::new(handler))); }
+/// - `handler`: The [`EventHandler`] to register.
+pub fn register_event_handler(handler: impl EventHandler) { let _ = EVENT_HANDLER.set(RwLock::new(Box::new(handler))); }
 
 
 
@@ -217,13 +178,13 @@ impl<'s, 'i> justact::MapAsync<str, Action> for TracingSet<MapAsyncView<'s, 'i, 
         Action: justact::Identifiable,
     {
         <MapAsyncView<'s, 'i, Action> as justact::MapAsync<str, Action>>::add(&mut self.0, selector.clone(), elem.clone()).map_err(Error::Inner)?;
-        TRACE_HANDLER
+        EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::JustAct(TraceJustAct::EnactAction { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), action: elem }))
-            .map_err(|err| Error::TraceHandle { err })?;
+            .handle(Event::Control(EventControl::EnactAction { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), action: elem }))
+            .map_err(|err| Error::EventHandle { err })?;
         Ok(())
     }
 }
@@ -264,13 +225,13 @@ impl justact::MapSync<Agreement> for TracingSet<Agreements> {
         Agreement: justact::Identifiable,
     {
         let existing = <Agreements as justact::MapSync<Agreement>>::add(&mut self.0, elem.clone()).map_err(Error::Inner)?;
-        TRACE_HANDLER
+        EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::JustAct(TraceJustAct::AddAgreement { agree: elem }))
-            .map_err(|err| Error::TraceHandle { err })?;
+            .handle(Event::Control(EventControl::AddAgreement { agree: elem }))
+            .map_err(|err| Error::EventHandle { err })?;
         Ok(existing)
     }
 }
@@ -314,13 +275,13 @@ impl<'s, 'i> justact::MapAsync<str, Arc<Message>> for TracingSet<MapAsyncView<'s
     {
         <MapAsyncView<'s, 'i, Arc<Message>> as justact::MapAsync<str, Arc<Message>>>::add(&mut self.0, selector, elem.clone())
             .map_err(Error::Inner)?;
-        TRACE_HANDLER
+        EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::JustAct(TraceJustAct::StateMessage { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), msg: elem }))
-            .map_err(|err| Error::TraceHandle { err })?;
+            .handle(Event::Control(EventControl::StateMessage { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), msg: elem }))
+            .map_err(|err| Error::EventHandle { err })?;
         Ok(())
     }
 }
@@ -365,13 +326,13 @@ impl justact::TimesSync for TracingSet<Times> {
     #[inline]
     fn add_current(&mut self, timestamp: Self::Timestamp) -> Result<bool, Self::Error> {
         let existing = <Times as justact::TimesSync>::add_current(&mut self.0, timestamp).map_err(Error::Inner)?;
-        TRACE_HANDLER
+        EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .read()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Trace::JustAct(TraceJustAct::AdvanceTime { timestamp }))
-            .map_err(|err| Error::TraceHandle { err })?;
+            .handle(Event::Control(EventControl::AdvanceTime { timestamp }))
+            .map_err(|err| Error::EventHandle { err })?;
         Ok(existing)
     }
 }

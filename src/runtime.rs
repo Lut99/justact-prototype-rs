@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:05:42
 //  Last edited:
-//    28 Jan 2025, 15:49:11
+//    29 Jan 2025, 22:06:25
 //  Auto updated?
 //    Yes
 //
@@ -36,13 +36,13 @@ pub enum Error {
     Agent {
         id:  String,
         #[source]
-        err: Box<dyn error::Error>,
+        err: Box<dyn 'static + Send + error::Error>,
     },
     #[error("Synchronizer {id:?} failed.")]
     Synchronizer {
         id:  String,
         #[source]
-        err: Box<dyn error::Error>,
+        err: Box<dyn 'static + Send + error::Error>,
     },
 }
 

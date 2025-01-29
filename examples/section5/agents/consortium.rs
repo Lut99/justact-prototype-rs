@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    29 Jan 2025, 15:45:33
+//    29 Jan 2025, 23:03:57
 //  Auto updated?
 //    Yes
 //
@@ -19,6 +19,7 @@ use justact::actions::ConstructableAction;
 use justact::actors::{Synchronizer, View};
 use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
+use justact::collections::Recipient;
 use justact::collections::map::{MapAsync, MapSync};
 use justact::collections::set::InfallibleSet as _;
 use justact::messages::ConstructableMessage;
@@ -103,9 +104,12 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                 // it to `1` and making the initial agreement active.
                 let current_times = view.times.current().cast()?;
                 if !current_times.contains(&1) {
+                    // State the message
+                    let message: SM = create_message(1, self.id(), include_str!("../slick/consortium_1.slick"));
+                    view.stated.add(Recipient::All, message.clone()).cast()?;
+
                     // Add the agreement
-                    let agree = Agreement { message: create_message(1, self.id(), include_str!("../slick/consortium_1.slick")), at: 1 };
-                    view.agreed.add(agree).cast()?;
+                    view.agreed.add(Agreement { message, at: 1 }).cast()?;
 
                     // Update the timestamp
                     view.times.add_current(1).cast()?;
@@ -122,9 +126,12 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                     // it to `1` and making the initial agreement active.
                     let current_times = view.times.current().cast()?;
                     if !current_times.contains(&1) {
+                        // State the message
+                        let message: SM = create_message(1, self.id(), include_str!("../slick/consortium_1.slick"));
+                        view.stated.add(Recipient::All, message.clone()).cast()?;
+
                         // Add the agreement
-                        let agree = Agreement { message: create_message(1, self.id(), include_str!("../slick/consortium_1.slick")), at: 1 };
-                        view.agreed.add(agree).cast()?;
+                        view.agreed.add(Agreement { message, at: 1 }).cast()?;
 
                         // Update the timestamp
                         view.times.add_current(1).cast()?;
@@ -142,8 +149,10 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                     }
 
                     // Push the amendment
-                    let agree = Agreement { message: create_message(2, self.id(), include_str!("../slick/consortium_2.slick")), at: 2 };
-                    view.agreed.add(agree).cast()?;
+                    // State the message
+                    let message: SM = create_message(2, self.id(), include_str!("../slick/consortium_2.slick"));
+                    view.stated.add(Recipient::All, message.clone()).cast()?;
+                    view.agreed.add(Agreement { message, at: 2 }).cast()?;
 
                     // Update the timestamp
                     view.times.add_current(2).cast()?;

@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    25 Jan 2025, 21:18:48
+//    29 Jan 2025, 23:00:09
 //  Auto updated?
 //    Yes
 //
@@ -13,8 +13,7 @@
 //
 
 use std::borrow::Cow;
-use std::cmp::Ordering;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fmt::Display;
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -22,18 +21,15 @@ use std::sync::Arc;
 use crossterm::event::EventStream;
 use error_trace::trace;
 use futures::{FutureExt as _, StreamExt as _};
-use justact::auxillary::Actored;
-use justact::collections::Selector;
+use justact::collections::Recipient;
 use justact::collections::map::InfallibleMap;
-use justact::collections::set::InfallibleSet;
-use justact::policies::Policy as _;
-use justact_prototype::io::{Trace, TraceDataplane, TraceJustAct};
-use justact_prototype::policy::slick::{AffectorAtom, Denotation, Effect, Extractor, GroundAtom, PatternAtom, SyntaxError, Text as SlickText};
+use justact_prototype::auditing::{Audit, Event, EventControl, EventData, Permission};
+use justact_prototype::policy::slick::{GroundAtom, Text as SlickText};
 use justact_prototype::wire::Message;
 use log::{debug, error};
 use parking_lot::{Mutex, MutexGuard};
 use ratatui::Frame;
-use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{Event as CEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize as _};
 use ratatui::text::{Line, Span, Text};
@@ -43,7 +39,7 @@ use tokio::io::AsyncRead;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 
-use crate::trace::TraceIter;
+use crate::event_iter::EventIter;
 use crate::widgets::scroll_area::ScrollState;
 
 
@@ -51,20 +47,20 @@ use crate::widgets::scroll_area::ScrollState;
 /// Defines the errors emitted by [`run()`].
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Failed to handle events from the terminal UI")]
-    Event {
+    #[error("Failed to get the next trace")]
+    EventRead {
         #[source]
-        err: std::io::Error,
+        err: crate::event_iter::Error,
     },
     #[error("Failed to render the terminal UI")]
     Render {
         #[source]
         err: std::io::Error,
     },
-    #[error("Failed to get the next trace")]
-    TraceRead {
+    #[error("Failed to handle events from the terminal UI")]
+    TuiEvent {
         #[source]
-        err: crate::trace::Error,
+        err: std::io::Error,
     },
 }
 
@@ -169,20 +165,13 @@ fn press_or_to(key1: impl Display, key2: impl Display, what: impl Display) -> Te
 
 
 /***** HELPERS *****/
-/// Defines the UI windows to draw.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Window {
-    /// The main window.
-    Main,
-}
-
 /// Defines which part of the [main](Window::Main) window is focused.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Focus {
-    /// The list of all traces is focused.
+    /// The list of all trace is focused.
     List,
     /// The individual trace pane is focused.
-    Trace,
+    Event,
 }
 
 /// Defines the state of the app.
@@ -191,93 +180,84 @@ pub enum Focus {
 /// access to locked fields.
 #[derive(Debug)]
 struct State {
-    /// Which window we're currently drawing.
-    window: Window,
     /// A queue of errors to show.
     errors: Arc<Mutex<VecDeque<Error>>>,
+    /// An audit happening live on the trace that provides us with validity.
+    audit: Arc<Mutex<Audit>>,
     /// Which part of the window is focused.
     focus: Focus,
-    /// The currently collected list of traces.
-    traces: Arc<Mutex<Vec<Trace<'static>>>>,
+    /// The currently collected list of trace.
+    trace: Arc<Mutex<Vec<Event<'static>>>>,
     /// The currently selected trace.
-    traces_state: ListState,
+    selected_event: ListState,
     /// The currently opened trace.
-    traces_opened: Option<usize>,
+    opened_event: Option<usize>,
     /// The horizontal scroll state of the right pane.
     right_hscroll: ScrollState,
     /// The vertical scroll state of the right pane.
     right_vscroll: ScrollState,
-
-    /// A cache for computed denotations of actions.
-    denot_cache: HashMap<(String, char), Result<(Denotation, Text<'static>), SyntaxError>>,
 }
 impl State {
     /// Constructor for the State that initializes it to default.
     ///
     /// # Arguments
     /// - `errors`: The shared queue of errors with the trace reader thread.
-    /// - `traces`: The shared buffer of parsed [`Trace`]s with the trace reader thread.
+    /// - `trace`: The shared buffer of parsed [`Event`]s with the trace reader thread.
+    /// - `audit`: Some shared [`Audit`] with the trace reader such that we can obtain action validities.
     ///
     /// # Returns
     /// A new State reading for state'ing.
-    fn new(errors: Arc<Mutex<VecDeque<Error>>>, traces: Arc<Mutex<Vec<Trace<'static>>>>) -> Self {
+    fn new(errors: Arc<Mutex<VecDeque<Error>>>, trace: Arc<Mutex<Vec<Event<'static>>>>, audit: Arc<Mutex<Audit>>) -> Self {
         Self {
-            window: Window::Main,
             errors,
-            traces,
+            trace,
+            audit,
             focus: Focus::List,
-            traces_state: ListState::default(),
-            traces_opened: None,
+            selected_event: ListState::default(),
+            opened_event: None,
             right_hscroll: ScrollState::default(),
             right_vscroll: ScrollState::default(),
-
-            denot_cache: HashMap::with_capacity(4),
         }
     }
 
     /// Returns a [`StateGuard`] which has locks to the internal queue of errors and buffer of
-    /// traces.
+    /// trace.
     ///
     /// # Returns
     /// A [`StateGuard`] which can be accessed.
     #[inline]
     fn lock(&mut self) -> StateGuard {
         StateGuard {
-            window: &mut self.window,
             _errors: self.errors.lock(),
+            audit: self.audit.lock(),
             focus: &mut self.focus,
-            traces: self.traces.lock(),
-            traces_state: &mut self.traces_state,
-            traces_opened: &mut self.traces_opened,
+            trace: self.trace.lock(),
+            selected_event: &mut self.selected_event,
+            opened_event: &mut self.opened_event,
             right_hscroll: &mut self.right_hscroll,
             right_vscroll: &mut self.right_vscroll,
-
-            denot_cache: &mut self.denot_cache,
         }
     }
 }
 
 /// Defines the accessible state of the app.
 struct StateGuard<'s> {
-    /// Which window we're currently drawing.
-    window: &'s mut Window,
     /// A queue of errors to show.
     _errors: MutexGuard<'s, VecDeque<Error>>,
+    /// An audit happening live on the trace that provides us with validity.
+    audit: MutexGuard<'s, Audit>,
     /// Which part of the window is focused.
     focus: &'s mut Focus,
-    /// The currently collected list of traces.
-    traces: MutexGuard<'s, Vec<Trace<'static>>>,
+    /// The currently collected list of trace.
+    trace: MutexGuard<'s, Vec<Event<'static>>>,
     /// The currently selected trace.
-    traces_state: &'s mut ListState,
+    selected_event: &'s mut ListState,
     /// The currently opened trace.
-    traces_opened: &'s mut Option<usize>,
+    opened_event: &'s mut Option<usize>,
     /// The horizontal scroll state of the right pane.
     right_hscroll: &'s mut ScrollState,
     /// The vertical scroll state of the right pane.
     right_vscroll: &'s mut ScrollState,
-
-    /// A cache for computed denotations of actions.
-    denot_cache: &'s mut HashMap<(String, char), Result<(Denotation, Text<'static>), SyntaxError>>,
 }
 
 
@@ -294,7 +274,7 @@ pub struct App {
     events:   EventStream,
     /// The receiver channel used to receive redraw commands from the trace thread.
     receiver: Receiver<()>,
-    /// The thread handle responsible for generating new traces.
+    /// The thread handle responsible for generating new trace.
     handle:   JoinHandle<()>,
 }
 
@@ -304,7 +284,7 @@ impl App {
     ///
     /// # Arguments
     /// - `what`: Some name (path or otherwise) that describes the `input` (used for debugging purposes only).
-    /// - `input`: Some [`Read`]er from which to read [`Trace`]s.
+    /// - `input`: Some [`Read`]er from which to read [`Event`]s.
     ///
     /// # Returns
     /// An App that is ready for drawing.
@@ -312,13 +292,14 @@ impl App {
     pub fn new(what: impl Into<String>, input: impl 'static + Send + AsyncRead + Unpin) -> Self {
         let what: String = what.into();
         let errors = Arc::new(Mutex::new(VecDeque::new()));
-        let traces = Arc::new(Mutex::new(Vec::new()));
+        let trace = Arc::new(Mutex::new(Vec::new()));
+        let audit = Arc::new(Mutex::new(Audit::new()));
         let (sender, receiver) = channel(3);
         Self {
-            state: State::new(errors.clone(), traces.clone()),
+            state: State::new(errors.clone(), trace.clone(), audit.clone()),
             events: EventStream::new(),
             receiver,
-            handle: tokio::spawn(Self::trace_reader(errors, traces, sender, what, input)),
+            handle: tokio::spawn(Self::trace_reader(errors, trace, audit, sender, what, input)),
         }
     }
 }
@@ -370,7 +351,7 @@ impl App {
                                 },
                             }
                         }
-                        Some(Err(err)) => return Err(Error::Event { err }),
+                        Some(Err(err)) => return Err(Error::TuiEvent { err }),
                         None => return Ok(()),
                     }
                 },
@@ -389,25 +370,17 @@ impl<'s> StateGuard<'s> {
     /// # Arguments
     /// - `frame`: Some [`Frame`] to render to.
     fn render(&mut self, frame: &mut Frame) {
-        // Delegate to the appropriate window.
-        match self.window {
-            Window::Main => self.render_main(frame),
-        }
-    }
-
-    /// Renders the application's main window.
-    fn render_main(&mut self, frame: &mut Frame) {
         let active = Color::White;
         let inactive = Color::DarkGray;
         let (left_color, right_color) = match *self.focus {
             Focus::List => (active, inactive),
-            Focus::Trace => (inactive, active),
+            Focus::Event => (inactive, active),
         };
         let vrects = Layout::vertical([Constraint::Length(3), Constraint::Fill(1), Constraint::Length(1)]).split(frame.area());
 
         // Title bar
         frame.render_widget(
-            Paragraph::new(format!("JustAct Prototype Trace Inspector - v{}", env!("CARGO_PKG_VERSION")))
+            Paragraph::new(format!("JustAct Prototype Event Inspector - v{}", env!("CARGO_PKG_VERSION")))
                 .style(Style::new().bold())
                 .block(Block::bordered()),
             vrects[0],
@@ -415,14 +388,14 @@ impl<'s> StateGuard<'s> {
 
 
 
-        // Traces (left plane)
-        let max_trace_width: usize = (self.traces.len().checked_ilog10().unwrap_or(0) + 1) as usize;
+        // Events (left plane)
+        let max_trace_width: usize = (self.trace.len().checked_ilog10().unwrap_or(0) + 1) as usize;
         let body_rects =
-            Layout::horizontal(if self.traces_opened.is_some() { [Constraint::Fill(1); 2].as_slice() } else { [Constraint::Fill(1); 1].as_slice() })
+            Layout::horizontal(if self.opened_event.is_some() { [Constraint::Fill(1); 2].as_slice() } else { [Constraint::Fill(1); 1].as_slice() })
                 .split(vrects[1]);
-        let titles = self.traces.iter().enumerate().map(|(i, t)| match t {
-            Trace::JustAct(t) => match t {
-                TraceJustAct::AddAgreement { agree } => {
+        let titles = self.trace.iter().enumerate().map(|(i, t)| match t {
+            Event::Control(t) => match t {
+                EventControl::AddAgreement { agree } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[JUSTACT]").italic());
@@ -430,7 +403,7 @@ impl<'s> StateGuard<'s> {
                     text.push_span(Span::from(format!("\"{} {}\"", agree.message.id.0, agree.message.id.1)).green());
                     text
                 },
-                TraceJustAct::AdvanceTime { timestamp } => {
+                EventControl::AdvanceTime { timestamp } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[JUSTACT]").italic());
@@ -438,61 +411,7 @@ impl<'s> StateGuard<'s> {
                     text.push_span(Span::from(format!("{timestamp}")).cyan());
                     text
                 },
-                TraceJustAct::EnactAction { who, to: _, action } => {
-                    // Before we render, update the denotation cache
-                    let denot: Result<&Denotation, _> = match self.denot_cache.get(&action.id) {
-                        Some(res) => res.as_ref().map(|(d, _)| d),
-                        None => {
-                            // Compute the denotation (with a usecase-specific effect pattern)
-                            let denot: Result<Denotation, _> =
-                                Extractor.extract_with_actor(action.actor_id(), &action.justification).map(|mut pol| {
-                                    pol.update_effect_pattern(
-                                        PatternAtom::Tuple(vec![
-                                            PatternAtom::Variable(SlickText::from_str("Worker")),
-                                            PatternAtom::ConstantSet(vec![SlickText::from_str("reads"), SlickText::from_str("writes")]),
-                                            PatternAtom::Variable(SlickText::from_str("Variable")),
-                                        ]),
-                                        AffectorAtom::Variable(SlickText::from_str("Worker")),
-                                    );
-                                    pol.truths()
-                                });
-
-                            // Then we serialize the denotation into a `Text` of effects, already ordered by error
-                            let denot = denot.map(|d| {
-                                let mut truths: Vec<(bool, String)> = <Denotation as InfallibleSet<GroundAtom>>::iter(&d)
-                                    .map(|t| {
-                                        (
-                                            match t {
-                                                GroundAtom::Constant(t) if format!("{t:?}") == "error" => true,
-                                                GroundAtom::Tuple(ts) if !ts.is_empty() && format!("{:?}", ts[0]) == "error" => true,
-                                                _ => false,
-                                            },
-                                            format!("{t:?}"),
-                                        )
-                                    })
-                                    .collect();
-                                truths.sort_by(|lhs, rhs| match (lhs.0, rhs.0) {
-                                    (true, false) => Ordering::Less,
-                                    (false, true) => Ordering::Greater,
-                                    (true, true) | (false, false) => lhs.1.cmp(&rhs.1),
-                                });
-                                (
-                                    d,
-                                    Text::from(
-                                        truths
-                                            .into_iter()
-                                            .map(|(is_err, line)| if is_err { Line::from(line).bold().red() } else { Line::from(line) })
-                                            .collect::<Vec<Line>>(),
-                                    ),
-                                )
-                            });
-
-                            // Cache it
-                            self.denot_cache.insert(action.id.clone(), denot);
-                            self.denot_cache.get(&action.id).unwrap().as_ref().map(|(d, _)| d)
-                        },
-                    };
-
+                EventControl::EnactAction { who, to: _, action } => {
                     // Then render
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
@@ -502,14 +421,16 @@ impl<'s> StateGuard<'s> {
                     text.push_span(" enacted action ");
                     text.push_span(Span::from(format!("\"{} {}\"", action.id.0, action.id.1)).yellow());
                     text.push_span(" ");
-                    text.push_span(if denot.map(|d| d.is_valid()).unwrap_or(false) {
-                        Span::from("✓").bold().green()
-                    } else {
-                        Span::from("✘").bold().white().on_red()
+                    text.push_span({
+                        if self.audit.permission_of(i).and_then(|res| res.as_ref().map(|a| a.is_permitted()).ok()).unwrap_or(false) {
+                            Span::from("✓").bold().green()
+                        } else {
+                            Span::from("✘").bold().white().on_red()
+                        }
                     });
                     text
                 },
-                TraceJustAct::StateMessage { who, to, msg } => {
+                EventControl::StateMessage { who, to, msg } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[JUSTACT]").italic());
@@ -517,7 +438,7 @@ impl<'s> StateGuard<'s> {
                     text.push_span(Span::from(format!("{who}")).bold());
                     text.push_span(" stated message ");
                     text.push_span(Span::from(format!("\"{} {}\"", msg.id.0, msg.id.1)).red());
-                    if let Selector::Agent(a) = to {
+                    if let Recipient::One(a) = to {
                         text.push_span(" to ");
                         text.push_span(Span::from(format!("{a}")).bold());
                     }
@@ -525,8 +446,8 @@ impl<'s> StateGuard<'s> {
                 },
             },
 
-            Trace::Dataplane(t) => match t {
-                TraceDataplane::Read { who, id, context, contents } => {
+            Event::Data(t) => match t {
+                EventData::Read { who, id, context, contents } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[DATAPLN]").italic().black().bg(left_color));
@@ -535,9 +456,21 @@ impl<'s> StateGuard<'s> {
                     text.push_span(" read variable ");
                     text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).bold().dark_gray());
                     text.push_span(" ");
-                    match (self.denot_cache.get(&(context.0.to_string(), context.1)), contents.is_some()) {
-                        (Some(Ok((denot, _))), true) => {
-                            if denot.is_valid() {
+                    match (
+                        self.trace
+                            .iter()
+                            .position(|e| {
+                                if let Event::Control(EventControl::EnactAction { action, .. }) = e {
+                                    &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
+                                } else {
+                                    false
+                                }
+                            })
+                            .and_then(|i| self.audit.permission_of(i)),
+                        contents.is_some(),
+                    ) {
+                        (Some(Ok(perm)), true) => {
+                            if perm.is_permitted() {
                                 text.push_span(Span::from("✓").bold().green());
                             } else {
                                 text.push_span(Span::from("!!!").bold().white().on_red());
@@ -549,7 +482,7 @@ impl<'s> StateGuard<'s> {
                     }
                     text
                 },
-                TraceDataplane::Write { who, id, context, new, contents: _ } => {
+                EventData::Write { who, id, context, new, contents: _ } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[DATAPLN]").italic().black().bg(left_color));
@@ -558,9 +491,20 @@ impl<'s> StateGuard<'s> {
                     text.push_span(format!(" wrote to{} variable ", if *new { " new" } else { "" }));
                     text.push_span(Span::from(format!("\"({} {}) {}\"", id.0.0, id.0.1, id.1)).bold().dark_gray());
                     text.push_span(" ");
-                    match self.denot_cache.get(&(context.0.to_string(), context.1)) {
-                        Some(Ok((denot, _))) => {
-                            if denot.is_valid() {
+                    match self
+                        .trace
+                        .iter()
+                        .position(|e| {
+                            if let Event::Control(EventControl::EnactAction { action, .. }) = e {
+                                &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
+                            } else {
+                                false
+                            }
+                        })
+                        .and_then(|i| self.audit.permission_of(i))
+                    {
+                        Some(Ok(perm)) => {
+                            if perm.is_permitted() {
                                 text.push_span(Span::from("✓").bold().green());
                             } else {
                                 text.push_span(Span::from("!!!").bold().white().on_red());
@@ -575,25 +519,25 @@ impl<'s> StateGuard<'s> {
             },
         });
         frame.render_stateful_widget(
-            List::new(titles).block(Block::bordered().title("Trace").fg(left_color)).highlight_style(Style::new().fg(Color::Black).bg(left_color)),
+            List::new(titles).block(Block::bordered().title("Event").fg(left_color)).highlight_style(Style::new().fg(Color::Black).bg(left_color)),
             body_rects[0],
-            self.traces_state,
+            self.selected_event,
         );
 
 
 
         // Opened trace (right plane)
-        if let Some(i) = self.traces_opened {
-            let trace: &Trace = &self.traces[*i];
+        if let Some(i) = self.opened_event {
+            let trace: &Event = &self.trace[*i];
 
             // Render the block
-            let block = Block::bordered().title(format!("Trace {}", *i + 1)).fg(right_color);
+            let block = Block::bordered().title(format!("Event {}", *i + 1)).fg(right_color);
             frame.render_widget(&block, body_rects[1]);
 
             // Render the components
             match trace {
-                Trace::JustAct(trace) => match trace {
-                    TraceJustAct::AddAgreement { agree } => {
+                Event::Control(trace) => match trace {
+                    EventControl::AddAgreement { agree } => {
                         // Prepare the layout
                         let text = Text::from(agree.message.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
                         let vrects = Layout::vertical(
@@ -635,7 +579,7 @@ impl<'s> StateGuard<'s> {
                         frame
                             .render_widget(Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)), vrects[4]);
                     },
-                    TraceJustAct::AdvanceTime { timestamp } => {
+                    EventControl::AdvanceTime { timestamp } => {
                         // Render the time
                         frame.render_widget(
                             Paragraph::new({
@@ -647,16 +591,37 @@ impl<'s> StateGuard<'s> {
                             block.inner(body_rects[1]),
                         );
                     },
-                    TraceJustAct::EnactAction { who, to, action } => {
+                    EventControl::EnactAction { who, to, action } => {
                         // Prepare the layout
-                        let denot: &Result<(Denotation, Text<'static>), _> = self.denot_cache.get(&action.id).unwrap_or_else(|| {
-                            panic!("Failed to find action \"{} {}\" in denotation cache after list construction!", action.id.0, action.id.1)
-                        });
+                        let denot: Result<(&Permission, Text<'static>), _> = self
+                            .audit
+                            .permission_of(*i)
+                            .unwrap_or_else(|| {
+                                panic!("Failed to find action {} \"{} {}\" in audit after list construction!", i, action.id.0, action.id.1)
+                            })
+                            .as_ref()
+                            .map(|p| {
+                                (p, {
+                                    let mut text = Text::default();
+                                    for t in &p.truths {
+                                        let mut line = Line::from(format!("{t:?}"));
+                                        if match &t {
+                                            GroundAtom::Constant(t) if format!("{t:?}") == "error" => true,
+                                            GroundAtom::Tuple(ts) if !ts.is_empty() && format!("{:?}", ts[0]) == "error" => true,
+                                            _ => false,
+                                        } {
+                                            line = line.bold().white().on_red();
+                                        }
+                                        text.push_line(line);
+                                    }
+                                    text
+                                })
+                            });
                         let vrects = Layout::vertical(
                             [Constraint::Length(1); 13]
                                 .into_iter()
                                 .chain([Constraint::Length(1)].into_iter().cycle().take({
-                                    let n: usize = denot.as_ref().map(|(d, _)| <Denotation as InfallibleMap<Effect>>::len(d)).unwrap_or(0);
+                                    let n: usize = denot.as_ref().map(|(p, _)| p.effects.len()).unwrap_or(0);
                                     if n > 0 { n } else { 1 }
                                 }))
                                 .chain([Constraint::Length(denot.as_ref().map(|(_, text)| text.height() as u16).unwrap_or(0))]),
@@ -680,8 +645,8 @@ impl<'s> StateGuard<'s> {
                                 let mut text = Text::from("Enacted to: ");
                                 text.push_span(
                                     Span::from(match to {
-                                        Selector::Agent(agent) => agent.as_ref(),
-                                        Selector::All => "<everyone>",
+                                        Recipient::All => "<everyone>",
+                                        Recipient::One(agent) => agent.as_ref(),
                                     })
                                     .bold(),
                                 );
@@ -761,16 +726,43 @@ impl<'s> StateGuard<'s> {
 
                         // Render the interpretation part of it
                         match denot {
-                            Ok((denot, truths)) => {
-                                // Validity
+                            Ok((perm, truths)) => {
+                                // Permission
                                 frame.render_widget(
                                     Paragraph::new({
-                                        let mut text = Text::from("Validity : ");
-                                        text.push_span(if denot.is_valid() {
-                                            Span::from("OK").bold().green()
+                                        let mut text = Text::from("Permission : ");
+                                        if perm.is_permitted() {
+                                            text.push_span(Span::from("OK").bold().green());
                                         } else {
-                                            Span::from("INVALID").bold().red()
-                                        });
+                                            text.push_span(Span::from("ILLEGAL").bold().red());
+                                            text.push_span(" (");
+                                            let mut first: bool = true;
+                                            if !perm.stated {
+                                                text.push_span(Span::from("not stated").red());
+                                                first = false;
+                                            }
+                                            if !perm.based {
+                                                if !first {
+                                                    text.push_span(", ");
+                                                }
+                                                text.push_span(Span::from("not based").red());
+                                                first = false;
+                                            }
+                                            if !perm.valid {
+                                                if !first {
+                                                    text.push_span(", ");
+                                                }
+                                                text.push_span(Span::from("not valid").red());
+                                                first = false;
+                                            }
+                                            if !perm.current {
+                                                if !first {
+                                                    text.push_span(", ");
+                                                }
+                                                text.push_span(Span::from("not current").red());
+                                            }
+                                            text.push_span(")");
+                                        }
                                         text
                                     })
                                     .fg(right_color),
@@ -778,12 +770,10 @@ impl<'s> StateGuard<'s> {
                                 );
                                 i += 1;
                                 // Effects
-                                frame.render_widget(Paragraph::new("Effects  : ").fg(right_color), vrects[i]);
+                                frame.render_widget(Paragraph::new("Effects    : ").fg(right_color), vrects[i]);
                                 i += 1;
-                                if !<Denotation as InfallibleMap<Effect>>::is_empty(&denot) {
-                                    let mut effects: Vec<&Effect> = <Denotation as InfallibleMap<Effect>>::iter(&denot).collect();
-                                    effects.sort_by_key(|effect| format!("{effect:?}"));
-                                    for effect in effects {
+                                if !perm.effects.is_empty() {
+                                    for effect in &perm.effects {
                                         frame.render_widget(
                                             Paragraph::new({
                                                 let mut text = Text::from(" - ");
@@ -820,7 +810,7 @@ impl<'s> StateGuard<'s> {
                             Err(_) => todo!(),
                         }
                     },
-                    TraceJustAct::StateMessage { who, to, msg } => {
+                    EventControl::StateMessage { who, to, msg } => {
                         // Prepare the layout
                         let text = Text::from(msg.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
                         let vrects = Layout::vertical(
@@ -843,8 +833,8 @@ impl<'s> StateGuard<'s> {
                                 let mut text = Text::from("Stated to: ");
                                 text.push_span(
                                     Span::from(match to {
-                                        Selector::Agent(agent) => agent.as_ref(),
-                                        Selector::All => "<everyone>",
+                                        Recipient::All => "<everyone>",
+                                        Recipient::One(agent) => agent.as_ref(),
                                     })
                                     .bold(),
                                 );
@@ -881,8 +871,8 @@ impl<'s> StateGuard<'s> {
                     },
                 },
 
-                Trace::Dataplane(trace) => match trace {
-                    TraceDataplane::Read { who, id, context, contents } => {
+                Event::Data(trace) => match trace {
+                    EventData::Read { who, id, context, contents } => {
                         // Prepare the layout
                         let scontents: Option<Cow<str>> = contents.as_ref().map(Cow::as_ref).map(String::from_utf8_lossy);
                         let lines = scontents
@@ -892,15 +882,26 @@ impl<'s> StateGuard<'s> {
                             .collect::<Vec<Line>>();
                         let lines = if !lines.is_empty() { lines } else { vec![Line::from("<no content>")] };
                         let text = Text::from(lines);
-                        let denot: Result<&Denotation, &str> = match self.denot_cache.get(&(context.0.to_string(), context.1)) {
-                            Some(Ok((denot, _))) => Ok(denot),
+                        let perm: Result<&Permission, &str> = match self
+                            .trace
+                            .iter()
+                            .position(|e| {
+                                if let Event::Control(EventControl::EnactAction { action, .. }) = e {
+                                    &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
+                                } else {
+                                    false
+                                }
+                            })
+                            .and_then(|i| self.audit.permission_of(i))
+                        {
+                            Some(Ok(perm)) => Ok(perm),
                             Some(Err(_)) => Err("FAILED TO EXTRACT POLICY!!!"),
                             None => Err("NOT FOUND!!!"),
                         };
                         let vrects = Layout::vertical(
                             [Constraint::Length(1); 5]
                                 .into_iter()
-                                .chain(if denot.is_ok() { Some(Constraint::Length(1)) } else { None }.into_iter())
+                                .chain(if perm.is_ok() { Some(Constraint::Length(1)) } else { None }.into_iter())
                                 .chain([Constraint::Length(2 + text.height() as u16)]),
                         )
                         .split(block.inner(body_rects[1]));
@@ -935,9 +936,9 @@ impl<'s> StateGuard<'s> {
                                 let mut text = Text::from("Justified by : ");
                                 text.push_span(Span::from(format!("{} {}", context.0, context.1)).yellow());
                                 text.push_span(" ");
-                                match denot {
-                                    Ok(denot) => {
-                                        if denot.is_valid() {
+                                match perm {
+                                    Ok(perm) => {
+                                        if perm.is_permitted() {
                                             text.push_span(Span::from("✓").bold().green());
                                         } else {
                                             text.push_span(Span::from("✘").bold().white().on_red());
@@ -952,7 +953,7 @@ impl<'s> StateGuard<'s> {
                             .fg(right_color),
                             vrects[3],
                         );
-                        if let Ok(denot) = denot {
+                        if let Ok(perm) = perm {
                             frame.render_widget(
                                 Paragraph::new({
                                     let mut text = Text::from(" - Effect : ");
@@ -969,7 +970,7 @@ impl<'s> StateGuard<'s> {
                                     ]);
                                     text.push_span(Span::from(format!("{effect:?}")).bold());
                                     text.push_span(" ");
-                                    if <Denotation as InfallibleMap<Effect>>::contains_key(denot, &effect) {
+                                    if <[_]>::iter(&perm.effects).find(|e| e.fact == effect).is_some() {
                                         text.push_span(Span::from("✓").bold().green());
                                     } else {
                                         text.push_span(Span::from("NOT IN ACTION!!!").bold().white().on_red());
@@ -984,25 +985,36 @@ impl<'s> StateGuard<'s> {
                         if contents.is_some() {
                             frame.render_widget(
                                 Paragraph::new(text).block(Block::bordered().title("Contents read").fg(right_color)).fg(right_color),
-                                vrects[if denot.is_ok() { 6 } else { 5 }],
+                                vrects[if perm.is_ok() { 6 } else { 5 }],
                             );
                         }
                     },
-                    TraceDataplane::Write { who, id, context, new, contents } => {
+                    EventData::Write { who, id, context, new, contents } => {
                         // Prepare the layout
                         let scontents: Cow<str> = String::from_utf8_lossy(contents);
                         let lines = scontents.lines().map(|l| Line::raw(l.to_string())).collect::<Vec<Line>>();
                         let lines = if !lines.is_empty() { lines } else { vec![Line::from("<no content>")] };
                         let text = Text::from(lines);
-                        let denot: Result<&Denotation, &str> = match self.denot_cache.get(&(context.0.to_string(), context.1)) {
-                            Some(Ok((denot, _))) => Ok(denot),
+                        let perm: Result<&Permission, &str> = match self
+                            .trace
+                            .iter()
+                            .position(|e| {
+                                if let Event::Control(EventControl::EnactAction { action, .. }) = e {
+                                    &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
+                                } else {
+                                    false
+                                }
+                            })
+                            .and_then(|i| self.audit.permission_of(i))
+                        {
+                            Some(Ok(perm)) => Ok(perm),
                             Some(Err(_)) => Err("FAILED TO EXTRACT POLICY!!!"),
                             None => Err("NOT FOUND!!!"),
                         };
                         let vrects = Layout::vertical(
                             [Constraint::Length(1); 5]
                                 .into_iter()
-                                .chain(if denot.is_ok() { Some(Constraint::Length(1)) } else { None }.into_iter())
+                                .chain(if perm.is_ok() { Some(Constraint::Length(1)) } else { None }.into_iter())
                                 .chain([Constraint::Length(2 + text.height() as u16)]),
                         )
                         .split(block.inner(body_rects[1]));
@@ -1037,9 +1049,9 @@ impl<'s> StateGuard<'s> {
                                 let mut text = Text::from("Justified by : ");
                                 text.push_span(Span::from(format!("{} {}", context.0, context.1)).yellow());
                                 text.push_span(" ");
-                                match denot {
-                                    Ok(denot) => {
-                                        if denot.is_valid() {
+                                match perm {
+                                    Ok(perm) => {
+                                        if perm.is_permitted() {
                                             text.push_span(Span::from("✓").bold().green());
                                         } else {
                                             text.push_span(Span::from("✘").bold().white().on_red());
@@ -1054,7 +1066,7 @@ impl<'s> StateGuard<'s> {
                             .fg(right_color),
                             vrects[3],
                         );
-                        if let Ok(denot) = denot {
+                        if let Ok(perm) = perm {
                             frame.render_widget(
                                 Paragraph::new({
                                     let mut text = Text::from(" - Effect : ");
@@ -1071,7 +1083,7 @@ impl<'s> StateGuard<'s> {
                                     ]);
                                     text.push_span(Span::from(format!("{effect:?}")).bold());
                                     text.push_span(" ");
-                                    if <Denotation as InfallibleMap<Effect>>::contains_key(denot, &effect) {
+                                    if <[_]>::iter(&perm.effects).find(|e| e.fact == effect).is_some() {
                                         text.push_span(Span::from("✓").bold().green());
                                     } else {
                                         text.push_span(Span::from("NOT IN ACTION!!!").bold().white().on_red());
@@ -1085,7 +1097,7 @@ impl<'s> StateGuard<'s> {
                         // Render the payload
                         frame.render_widget(
                             Paragraph::new(text).block(Block::bordered().title("Contents written").fg(right_color)).fg(right_color),
-                            vrects[if denot.is_ok() { 6 } else { 5 }],
+                            vrects[if perm.is_ok() { 6 } else { 5 }],
                         );
                     },
                 },
@@ -1095,34 +1107,34 @@ impl<'s> StateGuard<'s> {
 
 
         // Footer
-        if *self.focus == Focus::Trace {
+        if *self.focus == Focus::Event {
             let hrects = Layout::horizontal([Constraint::Fill(1); 3].as_slice()).split(vrects[2]);
 
             render_centered_text(frame, press_to("Q", "quit"), hrects[0]);
             render_centered_text(frame, press_to("Esc", "close trace"), hrects[1]);
             render_centered_text(frame, press_or_to("Shift+←", "Tab", "switch to list"), hrects[2]);
         } else {
-            let n_boxes: usize = 2 + self.traces_state.selected().map(|_| 2).unwrap_or(0) + self.traces_opened.map(|_| 1).unwrap_or(0);
+            let n_boxes: usize = 2 + self.selected_event.selected().map(|_| 2).unwrap_or(0) + self.opened_event.map(|_| 1).unwrap_or(0);
             let hrects = Layout::horizontal(Some(Constraint::Fill(1)).into_iter().cycle().take(n_boxes)).split(vrects[2]);
 
             let mut i: usize = 0;
             render_centered_text(
                 frame,
-                if self.traces_state.selected().is_some() { press_or_to("Q", "Esc", "quit") } else { press_to("Q", "quit") },
+                if self.selected_event.selected().is_some() { press_or_to("Q", "Esc", "quit") } else { press_to("Q", "quit") },
                 hrects[i],
             );
             i += 1;
-            if self.traces_state.selected().is_some() {
+            if self.selected_event.selected().is_some() {
                 render_centered_text(frame, press_to("Esc", "unselect"), hrects[i]);
                 i += 1;
             }
-            if self.traces_opened.is_some() {
+            if self.opened_event.is_some() {
                 render_centered_text(frame, press_or_to("Shift+→", "Tab", "switch to trace"), hrects[i]);
                 i += 1;
             }
-            render_centered_text(frame, press_or_to("↑", "↓", "select traces"), hrects[i]);
+            render_centered_text(frame, press_or_to("↑", "↓", "select trace"), hrects[i]);
             i += 1;
-            if self.traces_state.selected().is_some() {
+            if self.selected_event.selected().is_some() {
                 render_centered_text(frame, press_to("Enter", "view a trace"), hrects[i]);
             }
         }
@@ -1142,100 +1154,82 @@ impl<'s> StateGuard<'s> {
     ///
     /// # Errors
     /// This function may error if we failed to handle them properly.
-    fn handle_event(&mut self, event: Event) -> Result<ControlFlow<()>, Error> {
-        log::trace!("Handling event {event:?} in {:?}", self.window);
-        match &self.window {
-            Window::Main => self.handle_event_main(event),
-        }
-    }
-
-    /// Handles a event in the context of the main window.
-    ///
-    /// # Arguments
-    /// - `event`: Some [`Event`] to handle.
-    ///
-    /// # Returns
-    /// A [`ControlFlow`] describing whether the main game loop should
-    /// [continue](ControlFlow::Continue) or [not](ControlFlow::Break).
-    ///
-    /// # Errors
-    /// This function may error if we failed to handle them properly.
-    fn handle_event_main(&mut self, event: Event) -> Result<ControlFlow<()>, Error> {
+    fn handle_event(&mut self, event: CEvent) -> Result<ControlFlow<()>, Error> {
         match event {
             // List management (Enter, Up, Down, Esc)
-            Event::Key(KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+            CEvent::Key(KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
                 debug!(target: "Main", "Received key event ENTER");
-                if *self.focus == Focus::List && self.traces_state.selected().is_some() {
+                if *self.focus == Focus::List && self.selected_event.selected().is_some() {
                     // Make the currently selected one, opened
-                    *self.traces_opened = self.traces_state.selected();
-                    *self.focus = Focus::Trace;
+                    *self.opened_event = self.selected_event.selected();
+                    *self.focus = Focus::Event;
                     self.right_hscroll.reset();
                     self.right_vscroll.reset();
                 }
                 Ok(ControlFlow::Continue(()))
             },
-            Event::Key(KeyEvent { code: KeyCode::Up, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+            CEvent::Key(KeyEvent { code: KeyCode::Up, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
                 debug!(target: "Main", "Received key event UP");
-                if !self.traces.is_empty() && *self.focus == Focus::List {
-                    match self.traces_state.selected() {
-                        Some(i) if i == 0 => self.traces_state.select(None),
-                        Some(i) => self.traces_state.select(Some(i - 1)),
-                        None => self.traces_state.select(Some(self.traces.len() - 1)),
+                if !self.trace.is_empty() && *self.focus == Focus::List {
+                    match self.selected_event.selected() {
+                        Some(i) if i == 0 => self.selected_event.select(None),
+                        Some(i) => self.selected_event.select(Some(i - 1)),
+                        None => self.selected_event.select(Some(self.trace.len() - 1)),
                     }
                     // Also update the opened one if any
-                    if self.traces_opened.is_some() {
-                        *self.traces_opened = self.traces_state.selected();
+                    if self.opened_event.is_some() {
+                        *self.opened_event = self.selected_event.selected();
                         self.right_hscroll.reset();
                         self.right_vscroll.reset();
-                        if self.traces_opened.is_none() {
+                        if self.opened_event.is_none() {
                             *self.focus = Focus::List;
                         }
                     }
-                } else if *self.focus == Focus::Trace {
+                } else if *self.focus == Focus::Event {
                     self.right_vscroll.scroll_up();
                 }
                 Ok(ControlFlow::Continue(()))
             },
-            Event::Key(KeyEvent { code: KeyCode::Down, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+            CEvent::Key(KeyEvent { code: KeyCode::Down, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
                 debug!(target: "Main", "Received key event DOWN");
-                if !self.traces.is_empty() && *self.focus == Focus::List {
-                    match self.traces_state.selected() {
-                        Some(i) if i >= self.traces.len() - 1 => self.traces_state.select(None),
-                        Some(i) => self.traces_state.select(Some(i + 1)),
-                        None => self.traces_state.select(Some(0)),
+                if !self.trace.is_empty() && *self.focus == Focus::List {
+                    match self.selected_event.selected() {
+                        Some(i) if i >= self.trace.len() - 1 => self.selected_event.select(None),
+                        Some(i) => self.selected_event.select(Some(i + 1)),
+                        None => self.selected_event.select(Some(0)),
                     }
                     // Also update the opened one if any
-                    if self.traces_opened.is_some() {
-                        *self.traces_opened = self.traces_state.selected();
+                    if self.opened_event.is_some() {
+                        *self.opened_event = self.selected_event.selected();
                         self.right_hscroll.reset();
                         self.right_vscroll.reset();
-                        if self.traces_opened.is_none() {
+                        if self.opened_event.is_none() {
                             *self.focus = Focus::List;
                         }
                     }
-                } else if *self.focus == Focus::Trace {
+                } else if *self.focus == Focus::Event {
                     self.right_vscroll.scroll_down();
                 }
                 Ok(ControlFlow::Continue(()))
             },
-            Event::Key(KeyEvent { code: KeyCode::Left, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
-                if *self.focus == Focus::Trace {
+            CEvent::Key(KeyEvent { code: KeyCode::Left, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+                if *self.focus == Focus::Event {
                     self.right_hscroll.scroll_left();
                 }
                 Ok(ControlFlow::Continue(()))
             },
-            Event::Key(KeyEvent { code: KeyCode::Right, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
-                if *self.focus == Focus::Trace {
+            CEvent::Key(KeyEvent { code: KeyCode::Right, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+                if *self.focus == Focus::Event {
                     self.right_hscroll.scroll_right();
                 }
                 Ok(ControlFlow::Continue(()))
             },
-            Event::Key(KeyEvent { code: KeyCode::Esc, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+            CEvent::Key(KeyEvent { code: KeyCode::Esc, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
                 debug!(target: "Main", "Received key event ESC");
                 if *self.focus == Focus::List {
-                    if self.traces_state.selected().is_some() {
-                        self.traces_state.select(None);
-                        *self.traces_opened = None;
+                    if self.selected_event.selected().is_some() {
+                        self.selected_event.select(None);
+                        *self.opened_event = None;
                         *self.focus = Focus::List;
                         Ok(ControlFlow::Continue(()))
                     } else {
@@ -1243,36 +1237,36 @@ impl<'s> StateGuard<'s> {
                         Ok(ControlFlow::Break(()))
                     }
                 } else {
-                    *self.traces_opened = None;
+                    *self.opened_event = None;
                     *self.focus = Focus::List;
                     Ok(ControlFlow::Continue(()))
                 }
             },
 
             // Focus management
-            Event::Key(KeyEvent { code: KeyCode::Right, modifiers: KeyModifiers::SHIFT, kind: KeyEventKind::Press, state: _ })
-            | Event::Key(KeyEvent { code: KeyCode::Tab, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ })
+            CEvent::Key(KeyEvent { code: KeyCode::Right, modifiers: KeyModifiers::SHIFT, kind: KeyEventKind::Press, state: _ })
+            | CEvent::Key(KeyEvent { code: KeyCode::Tab, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ })
                 if *self.focus == Focus::List =>
             {
                 // If it's opened, we can shift
-                if self.traces_opened.is_some() {
-                    *self.focus = Focus::Trace;
+                if self.opened_event.is_some() {
+                    *self.focus = Focus::Event;
                 }
                 Ok(ControlFlow::Continue(()))
             },
-            Event::Key(KeyEvent { code: KeyCode::Left, modifiers: KeyModifiers::SHIFT, kind: KeyEventKind::Press, state: _ })
-            | Event::Key(KeyEvent { code: KeyCode::Tab, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ })
-                if *self.focus == Focus::Trace =>
+            CEvent::Key(KeyEvent { code: KeyCode::Left, modifiers: KeyModifiers::SHIFT, kind: KeyEventKind::Press, state: _ })
+            | CEvent::Key(KeyEvent { code: KeyCode::Tab, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ })
+                if *self.focus == Focus::Event =>
             {
                 // If it's opened, we can shift
-                if self.traces_opened.is_some() {
+                if self.opened_event.is_some() {
                     *self.focus = Focus::List;
                 }
                 Ok(ControlFlow::Continue(()))
             },
 
             // (Q)uit
-            Event::Key(KeyEvent { code: KeyCode::Char('q'), modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
+            CEvent::Key(KeyEvent { code: KeyCode::Char('q'), modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
                 debug!(target: "Main", "Quitting...");
                 Ok(ControlFlow::Break(()))
             },
@@ -1283,47 +1277,64 @@ impl<'s> StateGuard<'s> {
     }
 }
 
-// Collecting traces
+// Collecting trace
 impl App {
-    /// Thread that will push to the given list of traces once they become available.
+    /// Thread that will push to the given list of trace once they become available.
     ///
     /// # Arguments
-    /// - `output`: The [list](Vec) of [`Trace`]s to push to.
     /// - `errors`: A queue to push errors to.
+    /// - `output`: The [list](Vec) of [`Event`]s to push to.
+    /// - `audit`: A shared, running audit that is used to cache validity of actions as they come
+    ///   in.
     /// - `sender`: A [`Sender`] used to prompt redraws.
     /// - `what`: Some description of the `input`. Used for debugging only.
-    /// - `input`: Some kind of [`Read`]able handle to read new [`Trace`]s from.
+    /// - `input`: Some kind of [`Read`]able handle to read new [`Event`]s from.
     ///
     /// # Returns
     /// This function will only return once the given `input` closes.
     async fn trace_reader(
         errors: Arc<Mutex<VecDeque<Error>>>,
-        output: Arc<Mutex<Vec<Trace<'static>>>>,
+        output: Arc<Mutex<Vec<Event<'static>>>>,
+        audit: Arc<Mutex<Audit>>,
         sender: Sender<()>,
         what: String,
         input: impl AsyncRead + Unpin,
     ) {
-        // Simply iterate to add
-        let mut stream = TraceIter::new(what.clone(), input);
-        while let Some(trace) = stream.next().await {
-            // Unwrap it to add
-            match trace {
-                Ok(trace) => {
-                    debug!("Read trace {trace:?} from {what}");
+        // Simply iterate over the input stream to collect trace
+        let mut stream = EventIter::new(what.clone(), input);
+        while let Some(event) = stream.next().await {
+            // Unwrap it
+            match event {
+                Ok(event) => {
+                    debug!("Read event {event:?} from {what}");
+
+                    // Perform an audit on the trace
                     {
-                        let mut output: MutexGuard<Vec<Trace>> = output.lock();
-                        output.push(trace);
+                        let mut audit: MutexGuard<Audit> = audit.lock();
+                        audit.audit(&event);
                     }
-                    // NOTE: We ignore the result, because it's just a redraw prompt anyway
+
+                    // Add the trace to the output
+                    {
+                        let mut output: MutexGuard<Vec<Event>> = output.lock();
+                        output.push(event);
+                    }
+
+                    // NOTE: We ignore the result of polling the interface to redraw, because worst
+                    //       case, it simply won't be redrawn
                     let _ = sender.send(()).await;
                 },
                 Err(err) => {
-                    error!("{}", trace!(("Failed to read trace from {what}"), err));
+                    error!("{}", trace!(("Failed to read event from {what}"), err));
+
+                    // Add the event to the output
                     {
                         let mut errors: MutexGuard<VecDeque<Error>> = errors.lock();
-                        errors.push_back(Error::TraceRead { err });
+                        errors.push_back(Error::EventRead { err });
                     }
-                    // NOTE: We ignore the result, because it's just a redraw prompt anyway
+
+                    // NOTE: We ignore the result of polling the interface to redraw, because worst
+                    //       case, it simply won't be redrawn
                     let _ = sender.send(()).await;
                 },
             }

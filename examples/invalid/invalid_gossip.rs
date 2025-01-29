@@ -4,7 +4,7 @@
 //  Created:
 //    26 Jan 2025, 17:40:50
 //  Last edited:
-//    29 Jan 2025, 15:47:54
+//    29 Jan 2025, 22:35:27
 //  Auto updated?
 //    Yes
 //
@@ -30,7 +30,8 @@ use justact::messages::ConstructableMessage;
 use justact::runtime::Runtime as _;
 use justact::times::{Times, TimesSync};
 use justact_prototype::Runtime;
-use justact_prototype::io::{Trace, TraceHandler};
+use justact_prototype::auditing::Event;
+use justact_prototype::io::EventHandler;
 use log::{error, info};
 
 
@@ -44,12 +45,12 @@ enum Behaviour {
     Malicious,
 }
 
-/// A [`TraceHandler`] that writes to stdout.
-pub struct StdoutTraceHandler;
-impl TraceHandler for StdoutTraceHandler {
+/// An [`EventHandler`] that writes to stdout.
+pub struct StdoutEventHandler;
+impl EventHandler for StdoutEventHandler {
     #[inline]
-    fn handle(&self, trace: Trace) -> Result<(), Box<dyn error::Error>> {
-        println!("{}", serde_json::to_string(&trace).map_err(Box::new)?);
+    fn handle(&self, event: Event) -> Result<(), Box<dyn 'static + Send + error::Error>> {
+        println!("{}", serde_json::to_string(&event).map_err(|err| -> Box<dyn 'static + Send + error::Error> { Box::new(err) })?);
         Ok(())
     }
 }
@@ -195,8 +196,8 @@ fn main() {
     }
     info!("{} - v{}", env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"));
 
-    // Setup the trace callback
-    justact_prototype::io::register_trace_handler(StdoutTraceHandler);
+    // Setup the event callback
+    justact_prototype::io::register_event_handler(StdoutEventHandler);
 
     // Create the agents
     let agents: [Gossiper; 4] = [
