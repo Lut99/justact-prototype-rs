@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 17:45:04
 //  Last edited:
-//    25 Jan 2025, 20:40:03
+//    29 Jan 2025, 15:47:31
 //  Auto updated?
 //    Yes
 //
@@ -21,7 +21,7 @@ use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
 use justact::collections::map::{InfallibleMapSync as _, Map, MapAsync};
 use justact::collections::set::InfallibleSet;
-use justact::collections::{Selector, Singleton};
+use justact::collections::{Recipient, Singleton};
 use justact::messages::{ConstructableMessage, MessageSet};
 use justact::policies::{Extractor as _, Policy as _};
 use justact::times::Times;
@@ -221,7 +221,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                 match self.state.section5_4_1() {
                     State5_4_1::PublishDataset => {
                         // The St. Antonius publishes their dataset at the start, cuz why not
-                        view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
+                        view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
 
                         // Done, move to the next state
                         self.state = State::Section5_4_1(State5_4_1::DoPublish);
@@ -241,7 +241,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                         // ...we can justify writing to our own variable...
                         view.enacted
                             .add(
-                                Selector::All,
+                                Recipient::All,
                                 create_action(
                                     'a',
                                     self.id(),
@@ -266,7 +266,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                         let target_id: (String, u32) = (super::surf::ID.into(), 1);
                         if view.stated.contains_key(&target_id).cast()? {
                             // Publish ours
-                            view.stated.add(Selector::All, create_message(2, self.id(), include_str!("../slick/st-antonius_2.slick"))).cast()?;
+                            view.stated.add(Recipient::All, create_message(2, self.id(), include_str!("../slick/st-antonius_2.slick"))).cast()?;
                             self.state = State::Section5_4_1(State5_4_1::EnactExecuteAmysTask);
                         }
                         Ok(Poll::Pending)
@@ -297,7 +297,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                         }
 
                         // Now we're confident all messages are there, too; enact!
-                        view.enacted.add(Selector::All, create_action('b', self.id(), agree.clone(), just)).cast()?;
+                        view.enacted.add(Recipient::All, create_action('b', self.id(), agree.clone(), just)).cast()?;
 
                         // Then update the data plane
                         let enact_id: (&str, char) = (self.id(), 'b');
@@ -321,7 +321,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                         let target_id: (String, u32) = (super::amy::ID.into(), 2);
                         if view.stated.contains_key(&target_id).cast()? {
                             // It's there, publish our auth
-                            view.stated.add(Selector::All, create_message(3, self.id(), include_str!("../slick/st-antonius_3.slick"))).cast()?;
+                            view.stated.add(Recipient::All, create_message(3, self.id(), include_str!("../slick/st-antonius_3.slick"))).cast()?;
                             Ok(Poll::Ready(()))
                         } else {
                             Ok(Poll::Pending)
@@ -333,7 +333,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
             Script::Section5_4_2 => match self.state.section5_4_2() {
                 State5_4_2::PublishDataset => {
                     // The St. Antonius publishes their dataset at the start, cuz why not
-                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
+                    view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
 
                     // Done, move to the next state
                     self.state = State::Section5_4_2(State5_4_2::DoPublish);
@@ -353,7 +353,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     // ...we can justify writing to our own variable...
                     view.enacted
                         .add(
-                            Selector::All,
+                            Recipient::All,
                             create_action('a', self.id(), agree.clone(), MessageSet::from(view.stated.get(&(self.id().into(), 1)).cast()?.cloned())),
                         )
                         .cast()?;
@@ -374,7 +374,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     let target_id: (String, u32) = (super::bob::ID.into(), 1);
                     if view.stated.contains_key(&target_id).cast()? {
                         // Publish ours
-                        view.stated.add(Selector::All, create_message(4, self.id(), include_str!("../slick/st-antonius_4.slick"))).cast()?;
+                        view.stated.add(Recipient::All, create_message(4, self.id(), include_str!("../slick/st-antonius_4.slick"))).cast()?;
 
                         // Move to the next state
                         self.state = State::Section5_4_2(State5_4_2::DoWork);
@@ -419,7 +419,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
             Script::Section5_4_4 => match self.state.section5_4_4() {
                 State5_4_4::PublishDataset => {
                     // The St. Antonius publishes their dataset at the start, cuz why not
-                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
+                    view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
 
                     // Done, move to the next state
                     self.state = State::Section5_4_4(State5_4_4::DoPublish);
@@ -439,7 +439,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     // ...we can justify writing to our own variable...
                     view.enacted
                         .add(
-                            Selector::All,
+                            Recipient::All,
                             create_action('a', self.id(), agree.clone(), MessageSet::from(view.stated.get(&(self.id().into(), 1)).cast()?.cloned())),
                         )
                         .cast()?;
@@ -456,7 +456,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
 
                 State5_4_4::InternalisedLocalPolicy => {
                     // The St. Antonius can just publish this as they please
-                    view.stated.add(Selector::All, create_message(5, self.id(), include_str!("../slick/st-antonius_5.slick"))).cast()?;
+                    view.stated.add(Recipient::All, create_message(5, self.id(), include_str!("../slick/st-antonius_5.slick"))).cast()?;
 
                     // Done, move to the next state
                     self.state = State::Section5_4_4(State5_4_4::PatientPolicy);
@@ -496,7 +496,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     // Now publish
                     let msg: SM = create_message(6, self.id(), include_str!("../slick/st-antonius_6.slick"));
                     for trustee in trusted {
-                        view.stated.add(Selector::Agent(&trustee), msg.clone()).cast()?;
+                        view.stated.add(Recipient::One(&trustee), msg.clone()).cast()?;
                     }
 
                     // Done
@@ -507,7 +507,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
             Script::Section5_4_5 => match self.state.section5_4_5() {
                 State5_4_5::PublishDataset => {
                     // The St. Antonius publishes their dataset at the start, cuz why not
-                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
+                    view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/st-antonius_1.slick"))).cast()?;
 
                     // Done, move to the next state
                     self.state = State::Section5_4_5(State5_4_5::DoPublish);
@@ -527,7 +527,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     // ...we can justify writing to our own variable...
                     view.enacted
                         .add(
-                            Selector::All,
+                            Recipient::All,
                             create_action('a', self.id(), agree.clone(), MessageSet::from(view.stated.get(&(self.id().into(), 1)).cast()?.cloned())),
                         )
                         .cast()?;
@@ -553,7 +553,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     }
 
                     // Publish that we mark it as insensitive
-                    view.stated.add(Selector::All, create_message(7, self.id(), include_str!("../slick/st-antonius_7.slick"))).cast()?;
+                    view.stated.add(Recipient::All, create_message(7, self.id(), include_str!("../slick/st-antonius_7.slick"))).cast()?;
 
                     // Done!
                     Ok(Poll::Ready(()))

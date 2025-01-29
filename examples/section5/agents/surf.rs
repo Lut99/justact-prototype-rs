@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 14:23:12
 //  Last edited:
-//    25 Jan 2025, 20:37:49
+//    29 Jan 2025, 15:47:11
 //  Auto updated?
 //    Yes
 //
@@ -18,7 +18,7 @@ use justact::actions::ConstructableAction;
 use justact::actors::{Agent, View};
 use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
-use justact::collections::Selector;
+use justact::collections::Recipient;
 use justact::collections::map::{InfallibleMapSync as _, Map, MapAsync};
 use justact::collections::set::InfallibleSet as _;
 use justact::messages::{ConstructableMessage, MessageSet};
@@ -100,7 +100,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                 let target_id: (String, u32) = (super::amy::ID.into(), 1);
                 if view.stated.contains_key(&target_id).cast()? {
                     // Publish ours
-                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/surf_1.slick"))).cast()?;
+                    view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/surf_1.slick"))).cast()?;
                     return Ok(Poll::Ready(()));
                 }
 
@@ -115,7 +115,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                     let target_id: (String, u32) = (super::bob::ID.into(), 1);
                     if view.stated.contains_key(&target_id).cast()? {
                         // Publish ours
-                        view.stated.add(Selector::All, create_message(2, self.id(), include_str!("../slick/surf_2.slick"))).cast()?;
+                        view.stated.add(Recipient::All, create_message(2, self.id(), include_str!("../slick/surf_2.slick"))).cast()?;
 
                         // Move to the next state
                         self.state = State5_4_2::DoStep2;
@@ -176,10 +176,10 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                 // OK, now state our own execution...
                 let msg: SM = create_message(3, self.id(), include_str!("../slick/surf_3.slick"));
                 just.add(msg.clone());
-                view.stated.add(Selector::All, msg).cast()?;
+                view.stated.add(Recipient::All, msg).cast()?;
 
                 // ...and then enact it!
-                view.enacted.add(Selector::All, create_action('b', self.id(), agree.clone(), just)).cast()?;
+                view.enacted.add(Recipient::All, create_action('b', self.id(), agree.clone(), just)).cast()?;
 
                 // (and model the read)
                 let _ = self.handle.read(((super::st_antonius::ID, "patients-2024"), "patients"), (self.id(), 'b')).cast()?;

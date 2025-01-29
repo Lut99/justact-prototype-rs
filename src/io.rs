@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:57:55
 //  Last edited:
-//    26 Jan 2025, 18:04:02
+//    29 Jan 2025, 15:46:58
 //  Auto updated?
 //    Yes
 //
@@ -25,7 +25,7 @@ use crate::wire::{Action, Agreement, Message};
 
 mod justact {
     pub use ::justact::auxillary::Identifiable;
-    pub use ::justact::collections::Selector;
+    pub use ::justact::collections::Recipient;
     pub use ::justact::collections::map::{Map, MapAsync, MapSync};
     pub use ::justact::collections::set::{Set, SetSync};
     pub use ::justact::times::{Times, TimesSync};
@@ -94,9 +94,9 @@ pub enum TraceJustAct<'a> {
     /// Traces the advancement of the current time.
     AdvanceTime { timestamp: u64 },
     /// Traces the enacting of an action.
-    EnactAction { who: Cow<'a, str>, to: justact::Selector<Cow<'a, str>>, action: Action },
+    EnactAction { who: Cow<'a, str>, to: justact::Recipient<Cow<'a, str>>, action: Action },
     /// States a new message.
-    StateMessage { who: Cow<'a, str>, to: justact::Selector<Cow<'a, str>>, msg: Arc<Message> },
+    StateMessage { who: Cow<'a, str>, to: justact::Recipient<Cow<'a, str>>, msg: Arc<Message> },
 }
 
 /// Defines what may be traced by the dataplane-part of the framework (governance).
@@ -212,7 +212,7 @@ impl<'s, 'i> justact::Map<Action> for TracingSet<MapAsyncView<'s, 'i, Action>> {
 }
 impl<'s, 'i> justact::MapAsync<str, Action> for TracingSet<MapAsyncView<'s, 'i, Action>> {
     #[inline]
-    fn add(&mut self, selector: justact::Selector<&str>, elem: Action) -> Result<(), Self::Error>
+    fn add(&mut self, selector: justact::Recipient<&str>, elem: Action) -> Result<(), Self::Error>
     where
         Action: justact::Identifiable,
     {
@@ -308,7 +308,7 @@ impl<'s, 'i> justact::Map<Arc<Message>> for TracingSet<MapAsyncView<'s, 'i, Arc<
 }
 impl<'s, 'i> justact::MapAsync<str, Arc<Message>> for TracingSet<MapAsyncView<'s, 'i, Arc<Message>>> {
     #[inline]
-    fn add(&mut self, selector: justact::Selector<&str>, elem: Arc<Message>) -> Result<(), Self::Error>
+    fn add(&mut self, selector: justact::Recipient<&str>, elem: Arc<Message>) -> Result<(), Self::Error>
     where
         Arc<Message>: justact::Identifiable,
     {

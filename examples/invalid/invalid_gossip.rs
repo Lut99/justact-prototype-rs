@@ -4,7 +4,7 @@
 //  Created:
 //    26 Jan 2025, 17:40:50
 //  Last edited:
-//    26 Jan 2025, 18:02:33
+//    29 Jan 2025, 15:47:54
 //  Auto updated?
 //    Yes
 //
@@ -15,7 +15,6 @@
 
 use std::convert::Infallible;
 use std::error;
-use std::ops::ControlFlow;
 use std::task::Poll;
 
 use clap::Parser;
@@ -25,7 +24,7 @@ use justact::actions::ConstructableAction;
 use justact::actors::{Agent, Synchronizer, View};
 use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
-use justact::collections::Selector;
+use justact::collections::Recipient;
 use justact::collections::map::{Map, MapAsync, MapSync};
 use justact::messages::ConstructableMessage;
 use justact::runtime::Runtime as _;
@@ -72,7 +71,7 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Environment {
     type Error = Infallible;
 
     #[inline]
-    fn poll<T, A, S, E, SM, SA>(&mut self, _view: View<T, A, S, E>) -> Result<ControlFlow<()>, Self::Error>
+    fn poll<T, A, S, E, SM, SA>(&mut self, _view: View<T, A, S, E>) -> Result<Poll<()>, Self::Error>
     where
         T: TimesSync<Timestamp = u64>,
         A: MapSync<Agreement<SM, u64>>,
@@ -81,8 +80,8 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Environment {
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
         SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
-        // We kill the system once its our turn, all agents did  their thing
-        Ok(ControlFlow::Break(()))
+        // Nothing to do for us
+        Ok(Poll::Ready(()))
     }
 }
 
@@ -118,14 +117,14 @@ impl Agent<(String, u32), (String, char), str, u64> for Gossiper {
                 // Amy sends her message to Bob
                 "amy" => {
                     view.stated
-                        .add(Selector::Agent("bob"), SM::new((String::new(), 1), self.id.clone(), "hello cho me lass how r u.".into()))
+                        .add(Recipient::One("bob"), SM::new((String::new(), 1), self.id.clone(), "hello cho me lass how r u.".into()))
                         .unwrap();
                     Ok(Poll::Ready(()))
                 },
                 // Bob gossips Amy's message to Cho once he receives it
                 "bob" => {
                     if let Some(msg) = view.stated.get(&("amy".into(), 1)).unwrap() {
-                        if let Err(err) = view.stated.add(Selector::Agent("cho"), msg.clone()) {
+                        if let Err(err) = view.stated.add(Recipient::One("cho"), msg.clone()) {
                             error!("{}", trace!(("Bob failed to send Amy's message"), err));
                         }
                         Ok(Poll::Ready(()))
@@ -137,7 +136,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Gossiper {
                 "cho" => {
                     if view.stated.contains_key(&("amy".into(), 1)).unwrap() {
                         view.stated
-                            .add(Selector::Agent("amy"), SM::new((String::new(), 1), self.id.clone(), "sup amy ye im good hby".into()))
+                            .add(Recipient::One("amy"), SM::new((String::new(), 1), self.id.clone(), "sup amy ye im good hby".into()))
                             .unwrap();
                         return Ok(Poll::Ready(()));
                     }
@@ -148,7 +147,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Gossiper {
 
             Behaviour::Malicious => {
                 // Dan attempts to send Amy's message - but he never gets to see it!
-                if let Err(err) = view.stated.add(Selector::All, SM::new((String::new(), 1), "amy".into(), "hello bob me lad how r u.".into())) {
+                if let Err(err) = view.stated.add(Recipient::All, SM::new((String::new(), 1), "amy".into(), "hello bob me lad how r u.".into())) {
                     error!("{}", trace!(("Dan failed to send Amy's message"), err));
                 }
                 Ok(Poll::Ready(()))

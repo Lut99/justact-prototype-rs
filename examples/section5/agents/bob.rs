@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 11:04:07
 //  Last edited:
-//    25 Jan 2025, 20:36:47
+//    29 Jan 2025, 15:47:33
 //  Auto updated?
 //    Yes
 //
@@ -20,7 +20,7 @@ use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
 use justact::collections::map::{InfallibleMapSync as _, Map, MapAsync};
 use justact::collections::set::InfallibleSet;
-use justact::collections::{Selector, Singleton};
+use justact::collections::{Recipient, Singleton};
 use justact::messages::{ConstructableMessage, MessageSet};
 use justact::policies::{Denotation, Extractor as _, Policy as _};
 use justact::times::Times;
@@ -112,7 +112,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Bob {
                 State5_4_2::PublishWorkflow => {
                     // Bob publishes their statement like, right away, even though he can't deliver on
                     // executing step 4 yet.
-                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/bob_1.slick"))).cast()?;
+                    view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/bob_1.slick"))).cast()?;
 
                     // Done, move to the next state
                     self.state = State5_4_2::EnactWorkflow;
@@ -166,7 +166,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Bob {
                     }
 
                     // Now enact our work
-                    view.enacted.add(Selector::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
+                    view.enacted.add(Recipient::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
 
                     // Done!
                     self.state = State5_4_2::DoStep1;

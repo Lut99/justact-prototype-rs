@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:48:35
 //  Last edited:
-//    26 Jan 2025, 18:15:24
+//    29 Jan 2025, 15:45:33
 //  Auto updated?
 //    Yes
 //
@@ -13,7 +13,7 @@
 //!   and 5.4 of the JustAct paper \[1\].
 //
 
-use std::ops::ControlFlow;
+use std::task::Poll;
 
 use justact::actions::ConstructableAction;
 use justact::actors::{Synchronizer, View};
@@ -88,7 +88,7 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
 
     #[inline]
     #[track_caller]
-    fn poll<T, A, S, E, SM, SA>(&mut self, mut view: View<T, A, S, E>) -> Result<ControlFlow<()>, Self::Error>
+    fn poll<T, A, S, E, SM, SA>(&mut self, mut view: View<T, A, S, E>) -> Result<Poll<()>, Self::Error>
     where
         T: TimesSync<Timestamp = u64>,
         A: MapSync<Agreement<SM, u64>>,
@@ -111,28 +111,8 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                     view.times.add_current(1).cast()?;
                 }
 
-                // Done, other agents can have a go (as long as the target isn't enacted yet!)
-                match self.script {
-                    Script::Section5_4_1 => {
-                        // Section 5.4.1 ends with ???
-                        // TODO
-                        Ok(ControlFlow::Continue(()))
-                    },
-
-                    Script::Section5_4_2 => {
-                        // Section 5.4.2 ends with ???
-                        // TODO
-                        Ok(ControlFlow::Continue(()))
-                    },
-
-                    Script::Section5_4_4 => {
-                        // Section 5.4.4 ends with ???
-                        // TODO
-                        Ok(ControlFlow::Continue(()))
-                    },
-
-                    Script::Section5_4_5 => unreachable!(),
-                }
+                // We're done then
+                Ok(Poll::Ready(()))
             },
 
             // The fifth example features some different behaviour...
@@ -152,13 +132,13 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
 
                     // This time, move to the second state
                     self.state = State5_4_5::AmendedAgreement;
-                    Ok(ControlFlow::Continue(()))
+                    Ok(Poll::Pending)
                 },
 
                 State5_4_5::AmendedAgreement => {
                     // Once the St. Antonius has done their thing, we decide to amend the agreement
                     if !view.stated.contains_key(&(super::st_antonius::ID.into(), 1)).cast()? {
-                        return Ok(ControlFlow::Continue(()));
+                        return Ok(Poll::Pending);
                     }
 
                     // Push the amendment
@@ -170,13 +150,13 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
 
                     // Then we move to the third state!
                     self.state = State5_4_5::PullOutWires;
-                    Ok(ControlFlow::Continue(()))
+                    Ok(Poll::Pending)
                 },
 
                 State5_4_5::PullOutWires => {
                     // To emulate time passing, wait for the St. Antonius to publish their message
                     if !view.stated.contains_key(&(super::st_antonius::ID.into(), 7)).cast()? {
-                        return Ok(ControlFlow::Continue(()));
+                        return Ok(Poll::Pending);
                     }
 
                     // Move to time 3, but make nothing active!!
@@ -184,7 +164,7 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
 
                     // Move to the final state
                     self.state = State5_4_5::BackForSeconds;
-                    Ok(ControlFlow::Continue(()))
+                    Ok(Poll::Pending)
                 },
 
                 State5_4_5::BackForSeconds => {
@@ -193,7 +173,7 @@ impl Synchronizer<(String, u32), (String, char), str, u64> for Consortium {
                     view.agreed.add(agree).cast()?;
 
                     // Done with this example
-                    Ok(ControlFlow::Break(()))
+                    Ok(Poll::Ready(()))
                 },
             },
         }

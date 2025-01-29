@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:05:42
 //  Last edited:
-//    24 Jan 2025, 22:41:00
+//    28 Jan 2025, 15:49:11
 //  Auto updated?
 //    Yes
 //
@@ -13,7 +13,6 @@
 //
 
 use std::error;
-use std::ops::ControlFlow;
 use std::task::Poll;
 
 #[cfg(feature = "log")]
@@ -96,7 +95,7 @@ impl justact::Runtime for Runtime {
     fn run<A>(
         &mut self,
         agents: impl IntoIterator<Item = A>,
-        mut synchronizer: impl justact::Synchronizer<Self::MessageId, Self::ActionId, Self::Payload, Self::Timestamp, Id = Self::SynchronizerId>,
+        synchronizer: impl justact::Synchronizer<Self::MessageId, Self::ActionId, Self::Payload, Self::Timestamp, Id = Self::SynchronizerId>,
     ) -> Result<(), Self::Error>
     where
         A: justact::Agent<Self::MessageId, Self::ActionId, Self::Payload, Self::Timestamp, Id = Self::AgentId>,
@@ -111,7 +110,8 @@ impl justact::Runtime for Runtime {
         }
 
         // Enter a loop to execute agents
-        loop {
+        let mut synchronizer: Option<_> = Some(synchronizer);
+        while synchronizer.is_some() || !agents.is_empty() {
             // Go through the agents and keep the ones that want to be kept
             agents = agents
                 .into_iter()
@@ -136,17 +136,21 @@ impl justact::Runtime for Runtime {
                 .collect::<Result<Vec<A>, Error>>()?;
 
             // Now run an update cycle through the synchronizer
-            let sync_id: String = synchronizer.id().into();
-            match synchronizer.poll(justact::View {
-                times:   &mut self.times,
-                agreed:  &mut self.agreed,
-                stated:  self.stated.scope(&sync_id),
-                enacted: self.enacted.scope(&sync_id),
-            }) {
-                Ok(ControlFlow::Continue(_)) => continue,
-                Ok(ControlFlow::Break(_)) => break,
-                Err(err) => return Err(Error::Synchronizer { id: sync_id, err: Box::new(err) }),
-            }
+            synchronizer = if let Some(mut sync) = synchronizer.take() {
+                let sync_id: String = sync.id().into();
+                match sync.poll(justact::View {
+                    times:   &mut self.times,
+                    agreed:  &mut self.agreed,
+                    stated:  self.stated.scope(&sync_id),
+                    enacted: self.enacted.scope(&sync_id),
+                }) {
+                    Ok(Poll::Ready(_)) => None,
+                    Ok(Poll::Pending) => Some(sync),
+                    Err(err) => return Err(Error::Synchronizer { id: sync_id, err: Box::new(err) }),
+                }
+            } else {
+                None
+            };
         }
 
         // OK, done!

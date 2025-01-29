@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 15:11:36
 //  Last edited:
-//    25 Jan 2025, 20:36:13
+//    29 Jan 2025, 15:47:36
 //  Auto updated?
 //    Yes
 //
@@ -20,7 +20,7 @@ use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
 use justact::collections::map::{InfallibleMapSync as _, Map, MapAsync};
 use justact::collections::set::InfallibleSet;
-use justact::collections::{Selector, Singleton};
+use justact::collections::{Recipient, Singleton};
 use justact::messages::{ConstructableMessage, MessageSet};
 use justact::policies::{Extractor, Policy as _};
 use justact::times::Times;
@@ -127,7 +127,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
                         // Publish if we found the target message; else keep waiting
                         if found_requirements {
                             // Push the message
-                            view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/amy_1.slick"))).cast()?;
+                            view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/amy_1.slick"))).cast()?;
                             self.state = State::Download;
                         }
 
@@ -140,7 +140,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
                         // downloaded dataset available
                         if view.enacted.contains_key(&(super::st_antonius::ID.into(), 'b')).cast()? {
                             // Push the message
-                            view.stated.add(Selector::All, create_message(2, self.id(), include_str!("../slick/amy_2.slick"))).cast()?;
+                            view.stated.add(Recipient::All, create_message(2, self.id(), include_str!("../slick/amy_2.slick"))).cast()?;
                             self.state = State::EnactDownload;
                         }
 
@@ -178,7 +178,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
                         }
 
                         // We have them all; enact!
-                        view.enacted.add(Selector::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
+                        view.enacted.add(Recipient::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
 
                         // Then update the data plane
                         self.handle.read(((self.id(), "count-patients"), "num-patients"), (self.id(), 'a')).cast()?;

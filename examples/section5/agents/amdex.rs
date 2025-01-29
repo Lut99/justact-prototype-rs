@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:22:02
 //  Last edited:
-//    25 Jan 2025, 20:35:39
+//    29 Jan 2025, 15:47:39
 //  Auto updated?
 //    Yes
 //
@@ -19,7 +19,7 @@ use justact::actions::ConstructableAction;
 use justact::actors::{Agent, View};
 use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
-use justact::collections::Selector;
+use justact::collections::Recipient;
 use justact::collections::map::{Map, MapAsync};
 use justact::collections::set::InfallibleSet as _;
 use justact::messages::{ConstructableMessage, MessageSet};
@@ -101,7 +101,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amdex {
                 State::PublishEntryCount => {
                     // The AMdEX agent can publish immediately, it doesn't yet need the agreement for just
                     // stating.
-                    view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/amdex_1.slick"))).cast()?;
+                    view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/amdex_1.slick"))).cast()?;
                     self.state = State::DoWork;
                     Ok(Poll::Pending)
                 },
@@ -119,7 +119,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amdex {
                     // Then we justify using our own message only.
                     let amdex_1_id: (String, u32) = (self.id().into(), 1);
                     let just: MessageSet<SM> = MessageSet::from(view.stated.get(&amdex_1_id).cast()?.cloned());
-                    view.enacted.add(Selector::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
+                    view.enacted.add(Recipient::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
 
                     // With that done, make the "container" available
                     self.handle.write(((self.id(), "utils"), "entry-count"), (self.id(), 'a'), b"super_clever_code();").cast()?;

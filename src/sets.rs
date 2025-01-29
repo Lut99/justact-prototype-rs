@@ -4,7 +4,7 @@
 //  Created:
 //    13 Jan 2025, 15:26:24
 //  Last edited:
-//    26 Jan 2025, 17:38:44
+//    29 Jan 2025, 15:46:37
 //  Auto updated?
 //    Yes
 //
@@ -24,7 +24,7 @@ use crate::wire::{Action, Agreement, Message};
 
 mod justact {
     pub use ::justact::auxillary::{Actored, Authored, Identifiable};
-    pub use ::justact::collections::Selector;
+    pub use ::justact::collections::Recipient;
     pub use ::justact::collections::map::{Map, MapAsync};
     pub use ::justact::collections::set::{Set, SetSync};
     pub use ::justact::times::{Times, TimesSync};
@@ -256,7 +256,7 @@ where
     <E::Id as ToOwned>::Owned: 'static + Debug + Eq + Hash,
 {
     #[inline]
-    fn add(&mut self, selector: justact::Selector<&str>, elem: E) -> Result<(), Self::Error>
+    fn add(&mut self, selector: justact::Recipient<&str>, elem: E) -> Result<(), Self::Error>
     where
         E: justact::Identifiable,
     {
@@ -281,19 +281,19 @@ where
         // NOTE: Efficiency should be OK despite the clones everywhere, as we assume that messages
         //       are `Arc`'d in our prototype.
         match selector {
-            justact::Selector::Agent(id) => {
+            justact::Recipient::All => {
+                let id = elem.id();
+                for view in self.parent.views.values_mut() {
+                    view.insert(id.to_owned(), elem.clone());
+                }
+                Ok(())
+            },
+            justact::Recipient::One(id) => {
                 self.parent
                     .views
                     .get_mut(id)
                     .unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {id:?}"))
                     .insert(elem.id().to_owned(), elem);
-                Ok(())
-            },
-            justact::Selector::All => {
-                let id = elem.id();
-                for view in self.parent.views.values_mut() {
-                    view.insert(id.to_owned(), elem.clone());
-                }
                 Ok(())
             },
         }

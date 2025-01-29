@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 09:25:37
 //  Last edited:
-//    24 Jan 2025, 23:02:13
+//    29 Jan 2025, 15:47:26
 //  Auto updated?
 //    Yes
 //
@@ -19,7 +19,7 @@ use justact::actions::ConstructableAction;
 use justact::actors::{Agent, View};
 use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
-use justact::collections::Selector;
+use justact::collections::Recipient;
 use justact::collections::map::{Map, MapAsync};
 use justact::messages::ConstructableMessage;
 use justact::times::Times;
@@ -96,7 +96,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Dan {
                 }
 
                 // Publish Dan's
-                view.stated.add(Selector::All, create_message(1, self.id(), include_str!("../slick/dan_1.slick"))).cast()?;
+                view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/dan_1.slick"))).cast()?;
                 Ok(Poll::Ready(()))
             },
 
