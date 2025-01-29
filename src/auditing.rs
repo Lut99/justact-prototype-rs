@@ -4,7 +4,7 @@
 //  Created:
 //    29 Jan 2025, 21:14:36
 //  Last edited:
-//    29 Jan 2025, 23:02:05
+//    29 Jan 2025, 23:22:28
 //  Auto updated?
 //    Yes
 //
@@ -211,8 +211,8 @@ impl Audit {
                         })
                         .collect();
                     truths.sort_by(|lhs, rhs| match (lhs.0, rhs.0) {
-                        (true, false) => Ordering::Greater,
-                        (false, true) => Ordering::Less,
+                        (true, false) => Ordering::Less,
+                        (false, true) => Ordering::Greater,
                         _ => format!("{:?}", lhs.1).cmp(&format!("{:?}", rhs.1)),
                     });
                     validity.truths = truths.into_iter().map(|(_, t)| t).collect();
@@ -248,6 +248,7 @@ impl Audit {
             },
 
             // Data events have no bearing on us
+            #[cfg(feature = "dataplane")]
             Event::Data(_) => self.i += 1,
         }
     }

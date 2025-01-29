@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    29 Jan 2025, 23:00:09
+//    29 Jan 2025, 23:18:51
 //  Auto updated?
 //    Yes
 //
@@ -624,7 +624,7 @@ impl<'s> StateGuard<'s> {
                                     let n: usize = denot.as_ref().map(|(p, _)| p.effects.len()).unwrap_or(0);
                                     if n > 0 { n } else { 1 }
                                 }))
-                                .chain([Constraint::Length(denot.as_ref().map(|(_, text)| text.height() as u16).unwrap_or(0))]),
+                                .chain([Constraint::Length(denot.as_ref().map(|(_, text)| 2 + text.height() as u16).unwrap_or(0))]),
                         )
                         .split(block.inner(body_rects[1]));
 

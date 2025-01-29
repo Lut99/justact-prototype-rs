@@ -29,6 +29,11 @@ path = "examples/section5/section5.4.5.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
 [[example]]
+name = "invalid-action"
+path = "examples/invalid/invalid_action.rs"
+required-features = ["log", "serde", "slick"]
+
+[[example]]
 name = "invalid-gossip"
 path = "examples/invalid/invalid_gossip.rs"
 required-features = ["log", "serde", "slick"]
