@@ -4,12 +4,12 @@
 //  Created:
 //    22 Jan 2025, 11:04:07
 //  Last edited:
-//    30 Jan 2025, 18:57:47
+//    30 Jan 2025, 21:06:07
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Implements the Bob agent for section 5.4.2.
+//!   Implements the Bob agent for section 6.3.2.
 //
 
 use std::task::Poll;
@@ -43,7 +43,7 @@ pub const ID: &'static str = "bob";
 
 
 /***** HELPERS *****/
-/// The St. Antonius' state throughout section 5.4.2.
+/// The St. Antonius' state throughout section 6.3.2.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum State {
     /// We're trying to publish Bob's workflow, together with the claims task 1 / task 4 (will) be
@@ -62,7 +62,7 @@ enum State {
 
 
 /***** LIBRARY *****/
-/// The `bob`-agent from section 5.4.1.
+/// The `bob`-agent from section 6.3.1.
 pub struct Bob {
     state:  State,
     handle: ScopedStoreHandle,
@@ -81,8 +81,8 @@ impl Bob {
     #[inline]
     #[allow(unused)]
     pub fn new(script: Script, handle: &StoreHandle) -> Self {
-        if script != Script::Section5_4_2 && script != Script::Section5_4_3 {
-            panic!("Bob only plays a role in sections 5.4.2 and 5.4.3")
+        if script != Script::Section6_3_2 && script != Script::Section6_3_3 {
+            panic!("Bob only plays a role in sections 6.3.2 and 6.3.3")
         }
         Self { state: State::PublishWorkflow, handle: handle.scope(ID) }
     }

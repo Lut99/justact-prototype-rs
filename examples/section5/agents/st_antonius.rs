@@ -53,15 +53,15 @@ enum State {
     DoPublish,
 
     // The rest is section-dependent.
-    Section5_4_1(State5_4_1),
-    Section5_4_2(State5_4_2),
-    Section5_4_4(State5_4_4),
-    Section5_4_5,
+    Section6_3_1(State6_3_1),
+    Section6_3_2(State6_3_2),
+    Section6_3_4(State6_3_4),
+    Section6_3_5,
 }
 
-/// The St. Antonius' state throughout section 5.4.1.
+/// The St. Antonius' state throughout section 6.3.1.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum State5_4_1 {
+enum State6_3_1 {
     /// We're trying to publish our to-be-enacted message `(st-antonius 2)`, i.e., doing Amy's
     /// task.
     ExecuteAmysTask,
@@ -71,18 +71,18 @@ enum State5_4_1 {
     AuthoriseDownload,
 }
 
-/// The St. Antonius' state throughout section 5.4.2.
+/// The St. Antonius' state throughout section 6.3.2.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum State5_4_2 {
+enum State6_3_2 {
     /// We've observed Bob's workflow and we want to execute parts of it.
     ExecuteBobsTask,
     /// Bob has created a justification for us doing work. Let's do it!
     DoWork,
 }
 
-/// The St. Antonius' state throughout section 5.4.4.
+/// The St. Antonius' state throughout section 6.3.4.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum State5_4_4 {
+enum State6_3_4 {
     /// Publishing the internalized local policy.
     InternalisedLocalPolicy,
     /// Eventually, they _partially_ publish their further policy.
@@ -94,7 +94,7 @@ enum State5_4_4 {
 
 
 /***** LIBRARY *****/
-/// The `st-antonius`-agent from section 5.4.1.
+/// The `st-antonius`-agent from section 6.3.1.
 pub struct StAntonius {
     script: Script,
     state:  State,
@@ -175,26 +175,26 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
 
                 // Done. Up to this point, it was all script-agnostic; but continue appropriately now
                 self.state = match self.script {
-                    Script::Section5_4_1 => State::Section5_4_1(State5_4_1::ExecuteAmysTask),
-                    Script::Section5_4_2 => State::Section5_4_2(State5_4_2::ExecuteBobsTask),
-                    Script::Section5_4_3 => unreachable!(),
-                    Script::Section5_4_4 => State::Section5_4_4(State5_4_4::InternalisedLocalPolicy),
-                    Script::Section5_4_5 => State::Section5_4_5,
+                    Script::Section6_3_1 => State::Section6_3_1(State6_3_1::ExecuteAmysTask),
+                    Script::Section6_3_2 => State::Section6_3_2(State6_3_2::ExecuteBobsTask),
+                    Script::Section6_3_3 => unreachable!(),
+                    Script::Section6_3_4 => State::Section6_3_4(State6_3_4::InternalisedLocalPolicy),
+                    Script::Section6_3_5 => State::Section6_3_5,
                 };
                 Ok(Poll::Pending)
             },
 
-            State::Section5_4_1(State5_4_1::ExecuteAmysTask) => {
+            State::Section6_3_1(State6_3_1::ExecuteAmysTask) => {
                 // The St. Antonius publishes the fact they've done work sometime after surf published
                 let target_id: (String, u32) = (super::surf::ID.into(), 2);
                 if view.stated.contains_key(&target_id).cast()? {
                     // Publish ours
                     view.stated.add(Recipient::All, create_message(2, self.id(), include_str!("../slick/st-antonius_2.slick"))).cast()?;
-                    self.state = State::Section5_4_1(State5_4_1::EnactExecuteAmysTask);
+                    self.state = State::Section6_3_1(State6_3_1::EnactExecuteAmysTask);
                 }
                 Ok(Poll::Pending)
             },
-            State::Section5_4_1(State5_4_1::EnactExecuteAmysTask) => {
+            State::Section6_3_1(State6_3_1::EnactExecuteAmysTask) => {
                 // Else, the enactment: enact action antonius 2 when the desired agreement exists and its time is current...
                 let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
                 let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
@@ -232,10 +232,10 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     .cast()?;
 
                 // Done
-                self.state = State::Section5_4_1(State5_4_1::AuthoriseDownload);
+                self.state = State::Section6_3_1(State6_3_1::AuthoriseDownload);
                 Ok(Poll::Pending)
             },
-            State::Section5_4_1(State5_4_1::AuthoriseDownload) => {
+            State::Section6_3_1(State6_3_1::AuthoriseDownload) => {
                 // Wait for Amy's message wanting to do the download appears
                 let target_id: (String, u32) = (super::amy::ID.into(), 2);
                 if view.stated.contains_key(&target_id).cast()? {
@@ -247,7 +247,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                 }
             },
 
-            State::Section5_4_2(State5_4_2::ExecuteBobsTask) => {
+            State::Section6_3_2(State6_3_2::ExecuteBobsTask) => {
                 // After observing Bob's message, St. Antonius decides (and synchronizes with
                 // the others) they can do step 3. So they do ONCE the data is available.
                 let target_id: (String, u32) = (super::bob::ID.into(), 1);
@@ -256,11 +256,11 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     view.stated.add(Recipient::All, create_message(4, self.id(), include_str!("../slick/st-antonius_4.slick"))).cast()?;
 
                     // Move to the next state
-                    self.state = State::Section5_4_2(State5_4_2::DoWork);
+                    self.state = State::Section6_3_2(State6_3_2::DoWork);
                 }
                 Ok(Poll::Pending)
             },
-            State::Section5_4_2(State5_4_2::DoWork) => {
+            State::Section6_3_2(State6_3_2::DoWork) => {
                 // We first wait until Bob's enactment has been done
                 if !view.enacted.contains_key(&(super::bob::ID.into(), 'a')).cast()? {
                     return Ok(Poll::Pending);
@@ -293,15 +293,15 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                 Ok(Poll::Ready(()))
             },
 
-            State::Section5_4_4(State5_4_4::InternalisedLocalPolicy) => {
+            State::Section6_3_4(State6_3_4::InternalisedLocalPolicy) => {
                 // The St. Antonius can just publish this as they please
                 view.stated.add(Recipient::All, create_message(5, self.id(), include_str!("../slick/st-antonius_5.slick"))).cast()?;
 
                 // Done, move to the next state
-                self.state = State::Section5_4_4(State5_4_4::PatientPolicy);
+                self.state = State::Section6_3_4(State6_3_4::PatientPolicy);
                 Ok(Poll::Pending)
             },
-            State::Section5_4_4(State5_4_4::PatientPolicy) => {
+            State::Section6_3_4(State6_3_4::PatientPolicy) => {
                 // We now publish our internal policy but ONLY to trusted agents.
                 // Which agents are trusted? We'll read that from our previous snippet!
                 let st_antonius_5_id: (String, u32) = (self.id().into(), 5);
@@ -341,7 +341,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                 Ok(Poll::Ready(()))
             },
 
-            State::Section5_4_5 => {
+            State::Section6_3_5 => {
                 // Wait for the second agreement to be come valid
                 let agree: &Agreement<_, _> = match view.agreed.get(&(super::consortium::ID.into(), 2)).cast()? {
                     Some(agree) => agree,

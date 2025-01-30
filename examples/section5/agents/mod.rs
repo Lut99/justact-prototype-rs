@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:50:19
 //  Last edited:
-//    30 Jan 2025, 20:44:43
+//    30 Jan 2025, 21:06:07
 //  Auto updated?
 //    Yes
 //
@@ -134,21 +134,21 @@ where
 /// Defines which script agents will execute.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Script {
-    /// The first example, that of section 5.4.1.
+    /// The first example, that of section 6.3.1.
     #[allow(unused)]
-    Section5_4_1,
-    /// The second example, that of section 5.4.2.
+    Section6_3_1,
+    /// The second example, that of section 6.3.2.
     #[allow(unused)]
-    Section5_4_2,
-    /// The third example, that of section 5.4.3.
+    Section6_3_2,
+    /// The third example, that of section 6.3.3.
     #[allow(unused)]
-    Section5_4_3,
-    /// The fourth example, that of section 5.4.4.
+    Section6_3_3,
+    /// The fourth example, that of section 6.3.4.
     #[allow(unused)]
-    Section5_4_4,
-    /// The fifth example, that of section 5.4.5.
+    Section6_3_4,
+    /// The fifth example, that of section 6.3.5.
     #[allow(unused)]
-    Section5_4_5,
+    Section6_3_5,
 }
 
 

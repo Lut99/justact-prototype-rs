@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 15:11:36
 //  Last edited:
-//    30 Jan 2025, 21:03:07
+//    30 Jan 2025, 21:06:06
 //  Auto updated?
 //    Yes
 //
@@ -43,7 +43,7 @@ pub const ID: &'static str = "amy";
 
 
 /***** HELPERS *****/
-/// Amy's state throughout section 5.4.1.
+/// Amy's state throughout section 6.3.1.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum State {
     /// Amy wants to publish the first task, which executes `count-patients`.
@@ -59,7 +59,7 @@ pub enum State {
 
 
 /***** LIBRARY *****/
-/// The `amy`-agent from section 5.4.1.
+/// The `amy`-agent from section 6.3.1.
 pub struct Amy {
     script: Script,
     state:  State,
@@ -80,8 +80,8 @@ impl Amy {
     #[track_caller]
     #[allow(unused)]
     pub fn new(script: Script, handle: &StoreHandle) -> Self {
-        if script != Script::Section5_4_1 && script != Script::Section5_4_3 {
-            panic!("Amy only plays a role in sections 5.4.1 and 5.4.3")
+        if script != Script::Section6_3_1 && script != Script::Section6_3_3 {
+            panic!("Amy only plays a role in sections 6.3.1 and 6.3.3")
         }
         Self { script, state: State::CountPatients, handle: handle.scope(ID) }
     }
@@ -145,7 +145,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
                 }
 
                 // Now, in scenario 3, Amy will die unexpectedly, so `(amy a)` never occurs.
-                if self.script == Script::Section5_4_3 {
+                if self.script == Script::Section6_3_3 {
                     return Ok(Poll::Ready(()));
                 }
 

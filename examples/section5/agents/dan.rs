@@ -4,12 +4,12 @@
 //  Created:
 //    21 Jan 2025, 09:25:37
 //  Last edited:
-//    30 Jan 2025, 20:54:44
+//    30 Jan 2025, 21:06:07
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Implements the "Disruptor" Dan agent from section 5.4.1 in the
+//!   Implements the "Disruptor" Dan agent from section 6.3.1 in the
 //!   paper.
 //
 
@@ -39,7 +39,7 @@ pub const ID: &'static str = "dan";
 
 
 /***** LIBRARY *****/
-/// The `dan`-agent from section 5.4.1.
+/// The `dan`-agent from section 6.3.1.
 pub struct Dan;
 impl Dan {
     /// Constructor for the `dan` agent.
@@ -52,8 +52,8 @@ impl Dan {
     #[inline]
     #[allow(unused)]
     pub fn new(script: Script) -> Self {
-        if script != Script::Section5_4_1 && script != Script::Section5_4_3 {
-            panic!("Dan only plays a role in sections 5.4.1 and 5.4.3")
+        if script != Script::Section6_3_1 && script != Script::Section6_3_3 {
+            panic!("Dan only plays a role in sections 6.3.1 and 6.3.3")
         }
         Self
     }

@@ -1,15 +1,15 @@
-//  SECTION 5.4.2.rs
+//  SECTION 6.3.1.rs
 //    by Lut99
 //
 //  Created:
-//    22 Jan 2025, 16:57:21
+//    14 Jan 2025, 16:49:57
 //  Last edited:
-//    30 Jan 2025, 20:44:56
+//    30 Jan 2025, 21:06:06
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Implements the second example from section 5.4 of the JustAct paper
+//!   Implements the first example from section 5.4 of the JustAct paper
 //!   \[1\].
 //
 
@@ -17,7 +17,7 @@ mod agents;
 mod error;
 mod trace;
 
-use agents::{Agent, Bob, Consortium, Script, StAntonius, Surf};
+use agents::{Agent, Amy, Consortium, Dan, Script, StAntonius, Surf};
 use clap::Parser;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
@@ -67,12 +67,13 @@ fn main() {
 
     // Create the agents
     let dataplane = StoreHandle::new();
-    let agents: [Agent; 3] = [
-        Bob::new(Script::Section5_4_2, &dataplane).into(),
-        StAntonius::new(Script::Section5_4_2, &dataplane).into(),
-        Surf::new(Script::Section5_4_2, &dataplane).into(),
+    let agents: [Agent; 4] = [
+        Amy::new(Script::Section6_3_1, &dataplane).into(),
+        Dan::new(Script::Section6_3_1).into(),
+        StAntonius::new(Script::Section6_3_1, &dataplane).into(),
+        Surf::new(Script::Section6_3_1, &dataplane).into(),
     ];
-    let sync = Consortium::new(Script::Section5_4_2);
+    let sync = Consortium::new(Script::Section6_3_1);
 
     // Run the runtime!
     let mut runtime = Runtime::new();
