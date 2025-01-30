@@ -19,6 +19,11 @@ path = "examples/section5/section5.4.2.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
 [[example]]
+name = "section5-4-3"
+path = "examples/section5/section5.4.3.rs"
+required-features = ["dataplane", "log", "serde", "slick"]
+
+[[example]]
 name = "section5-4-4"
 path = "examples/section5/section5.4.4.rs"
 required-features = ["dataplane", "log", "serde", "slick"]

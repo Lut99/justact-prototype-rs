@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 16:57:21
 //  Last edited:
-//    29 Jan 2025, 23:35:04
+//    30 Jan 2025, 20:44:56
 //  Auto updated?
 //    Yes
 //
@@ -72,7 +72,7 @@ fn main() {
         StAntonius::new(Script::Section5_4_2, &dataplane).into(),
         Surf::new(Script::Section5_4_2, &dataplane).into(),
     ];
-    let sync = Consortium::new(Script::Section5_4_2, &dataplane);
+    let sync = Consortium::new(Script::Section5_4_2);
 
     // Run the runtime!
     let mut runtime = Runtime::new();

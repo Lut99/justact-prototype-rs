@@ -4,7 +4,7 @@
 //  Created:
 //    16 Jan 2025, 12:18:55
 //  Last edited:
-//    29 Jan 2025, 23:18:51
+//    30 Jan 2025, 21:05:12
 //  Auto updated?
 //    Yes
 //
@@ -1111,7 +1111,7 @@ impl<'s> StateGuard<'s> {
             let hrects = Layout::horizontal([Constraint::Fill(1); 3].as_slice()).split(vrects[2]);
 
             render_centered_text(frame, press_to("Q", "quit"), hrects[0]);
-            render_centered_text(frame, press_to("Esc", "close trace"), hrects[1]);
+            render_centered_text(frame, press_to("Esc", "close event"), hrects[1]);
             render_centered_text(frame, press_or_to("Shift+←", "Tab", "switch to list"), hrects[2]);
         } else {
             let n_boxes: usize = 2 + self.selected_event.selected().map(|_| 2).unwrap_or(0) + self.opened_event.map(|_| 1).unwrap_or(0);
@@ -1129,13 +1129,13 @@ impl<'s> StateGuard<'s> {
                 i += 1;
             }
             if self.opened_event.is_some() {
-                render_centered_text(frame, press_or_to("Shift+→", "Tab", "switch to trace"), hrects[i]);
+                render_centered_text(frame, press_or_to("Shift+→", "Tab", "switch to event"), hrects[i]);
                 i += 1;
             }
-            render_centered_text(frame, press_or_to("↑", "↓", "select trace"), hrects[i]);
+            render_centered_text(frame, press_or_to("↑", "↓", "select event"), hrects[i]);
             i += 1;
             if self.selected_event.selected().is_some() {
-                render_centered_text(frame, press_to("Enter", "view a trace"), hrects[i]);
+                render_centered_text(frame, press_to("Enter", "view an event"), hrects[i]);
             }
         }
     }

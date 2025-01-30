@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:49:57
 //  Last edited:
-//    29 Jan 2025, 23:34:56
+//    30 Jan 2025, 20:44:51
 //  Auto updated?
 //    Yes
 //
@@ -69,11 +69,11 @@ fn main() {
     let dataplane = StoreHandle::new();
     let agents: [Agent; 4] = [
         Amy::new(Script::Section5_4_1, &dataplane).into(),
-        Dan::new(Script::Section5_4_1, &dataplane).into(),
+        Dan::new(Script::Section5_4_1).into(),
         StAntonius::new(Script::Section5_4_1, &dataplane).into(),
         Surf::new(Script::Section5_4_1, &dataplane).into(),
     ];
-    let sync = Consortium::new(Script::Section5_4_1, &dataplane);
+    let sync = Consortium::new(Script::Section5_4_1);
 
     // Run the runtime!
     let mut runtime = Runtime::new();

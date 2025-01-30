@@ -1,23 +1,22 @@
-//  SECTION 5.4.4.rs
+//  SECTION 5. 4. 3.rs
 //    by Lut99
 //
 //  Created:
-//    22 Jan 2025, 16:57:21
+//    30 Jan 2025, 18:28:07
 //  Last edited:
-//    30 Jan 2025, 20:44:59
+//    30 Jan 2025, 20:49:13
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Implements the fourth example from section 5.4 of the JustAct paper
-//!   \[1\].
+//!   Implements the third example from the paper.
 //
 
 mod agents;
 mod error;
 mod trace;
 
-use agents::{Agent, Consortium, Script, StAntonius, Surf};
+use agents::{Agent, Amy, Bob, Consortium, Dan, Script, StAntonius, Surf};
 use clap::Parser;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
@@ -67,8 +66,18 @@ fn main() {
 
     // Create the agents
     let dataplane = StoreHandle::new();
-    let agents: [Agent; 2] = [StAntonius::new(Script::Section5_4_4, &dataplane).into(), Surf::new(Script::Section5_4_4, &dataplane).into()];
-    let sync = Consortium::new(Script::Section5_4_4);
+    let agents: [Agent; 7] = [
+        Amy::new(Script::Section5_4_3, &dataplane).into(),
+        Bob::new(Script::Section5_4_3, &dataplane).into(),
+        Dan::new(Script::Section5_4_3).into(),
+        // NOTE: We split the St. Antonius & SURF agents into two agents, one for every of the
+        // concurrent use-cases.
+        StAntonius::new(Script::Section5_4_1, &dataplane).into(),
+        StAntonius::new(Script::Section5_4_2, &dataplane).into(),
+        Surf::new(Script::Section5_4_1, &dataplane).into(),
+        Surf::new(Script::Section5_4_2, &dataplane).into(),
+    ];
+    let sync = Consortium::new(Script::Section5_4_3);
 
     // Run the runtime!
     let mut runtime = Runtime::new();

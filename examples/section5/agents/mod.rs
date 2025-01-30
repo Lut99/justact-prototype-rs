@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:50:19
 //  Last edited:
-//    29 Jan 2025, 23:35:20
+//    30 Jan 2025, 20:44:43
 //  Auto updated?
 //    Yes
 //
@@ -140,6 +140,9 @@ pub enum Script {
     /// The second example, that of section 5.4.2.
     #[allow(unused)]
     Section5_4_2,
+    /// The third example, that of section 5.4.3.
+    #[allow(unused)]
+    Section5_4_3,
     /// The fourth example, that of section 5.4.4.
     #[allow(unused)]
     Section5_4_4,

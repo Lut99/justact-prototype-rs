@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 16:57:21
 //  Last edited:
-//    29 Jan 2025, 22:36:35
+//    30 Jan 2025, 20:45:03
 //  Auto updated?
 //    Yes
 //
@@ -68,7 +68,7 @@ fn main() {
     // Create the agents
     let dataplane = StoreHandle::new();
     let agents: [Agent; 1] = [StAntonius::new(Script::Section5_4_5, &dataplane).into()];
-    let sync = Consortium::new(Script::Section5_4_5, &dataplane);
+    let sync = Consortium::new(Script::Section5_4_5);
 
     // Run the runtime!
     let mut runtime = Runtime::new();

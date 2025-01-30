@@ -4,7 +4,7 @@
 //  Created:
 //    17 Jan 2025, 15:11:36
 //  Last edited:
-//    29 Jan 2025, 23:38:50
+//    30 Jan 2025, 21:03:07
 //  Auto updated?
 //    Yes
 //
@@ -77,8 +77,14 @@ impl Amy {
     /// # Returns
     /// A new Amy agent.
     #[inline]
+    #[track_caller]
     #[allow(unused)]
-    pub fn new(script: Script, handle: &StoreHandle) -> Self { Self { script, state: State::CountPatients, handle: handle.scope(ID) } }
+    pub fn new(script: Script, handle: &StoreHandle) -> Self {
+        if script != Script::Section5_4_1 && script != Script::Section5_4_3 {
+            panic!("Amy only plays a role in sections 5.4.1 and 5.4.3")
+        }
+        Self { script, state: State::CountPatients, handle: handle.scope(ID) }
+    }
 }
 impl Identifiable for Amy {
     type Id = str;
@@ -99,98 +105,92 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
         SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
         SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
-        // Decide which script to execute
-        match self.script {
-            Script::Section5_4_1 => {
-                match self.state {
-                    State::CountPatients => {
-                        // Amy waits until she sees her package of interest pop into existance
-                        // I.e., she waits until she sees: `(surf utils) ready.`
-                        let pkg = GroundAtom::Tuple(vec![
-                            GroundAtom::Tuple(vec![
-                                GroundAtom::Constant(Text::from_str(super::surf::ID)),
-                                GroundAtom::Constant(Text::from_str("utils")),
-                            ]),
-                            GroundAtom::Constant(Text::from_str("ready")),
-                        ]);
-                        let mut found_requirements: bool = false;
-                        for msg in view.stated.iter().cast()? {
-                            let set = Singleton(msg);
-                            let denot: Denotation = SlickExtractor.extract(&set).cast()?.truths();
-                            if denot.is_valid() && <Denotation as InfallibleSet<GroundAtom>>::contains(&denot, &pkg) {
-                                // The message exists (and is valid)! Publish her snippet.
-                                found_requirements = true;
-                                break;
-                            }
-                        }
-
-                        // Publish if we found the target message; else keep waiting
-                        if found_requirements {
-                            // Push the message
-                            view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/amy_1.slick"))).cast()?;
-                            self.state = State::Download;
-                        }
-
-                        // We're anyhow going to continue running
-                        Ok(Poll::Pending)
-                    },
-
-                    State::Download => {
-                        // We wait until we see St. Antonius' enacted statement, making the to-be-
-                        // downloaded dataset available
-                        if view.enacted.contains_key(&(super::st_antonius::ID.into(), 'b')).cast()? {
-                            // Push the message
-                            view.stated.add(Recipient::All, create_message(2, self.id(), include_str!("../slick/amy_2.slick"))).cast()?;
-                            self.state = State::EnactDownload;
-                        }
-
-                        // We're anyhow going to continue running
-                        Ok(Poll::Pending)
-                    },
-
-                    State::EnactDownload => {
-                        // First wait to ensure the required agreement exists
-                        let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
-                        let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
-                            Some(agree) => agree,
-                            None => return Ok(Poll::Pending),
-                        };
-                        if !view.times.current().cast()?.contains(&agree.at) {
-                            return Ok(Poll::Pending);
-                        }
-
-                        // Now we wait until we have all the required messages
-                        let mut just: MessageSet<SM> = MessageSet::new();
-                        for msg in [
-                            (super::surf::ID.into(), 1),
-                            (super::amy::ID.into(), 1),
-                            (super::amy::ID.into(), 2),
-                            (super::st_antonius::ID.into(), 1),
-                            (super::st_antonius::ID.into(), 2),
-                            (super::st_antonius::ID.into(), 3),
-                        ] {
-                            match view.stated.get(&msg).cast()? {
-                                Some(msg) => {
-                                    just.add(msg.clone());
-                                },
-                                None => return Ok(Poll::Pending),
-                            }
-                        }
-
-                        // We have them all; enact!
-                        view.enacted.add(Recipient::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
-
-                        // Then update the data plane
-                        self.handle.read(((self.id(), "count-patients"), "num-patients"), (self.id(), 'a')).cast()?;
-
-                        // Amy's done!
-                        Ok(Poll::Ready(()))
-                    },
+        match self.state {
+            State::CountPatients => {
+                // Amy waits until she sees her package of interest pop into existance
+                // I.e., she waits until she sees: `(surf utils) ready.`
+                let pkg = GroundAtom::Tuple(vec![
+                    GroundAtom::Tuple(vec![GroundAtom::Constant(Text::from_str(super::surf::ID)), GroundAtom::Constant(Text::from_str("utils"))]),
+                    GroundAtom::Constant(Text::from_str("ready")),
+                ]);
+                let mut found_requirements: bool = false;
+                for msg in view.stated.iter().cast()? {
+                    let set = Singleton(msg);
+                    let denot: Denotation = SlickExtractor.extract(&set).cast()?.truths();
+                    if denot.is_valid() && <Denotation as InfallibleSet<GroundAtom>>::contains(&denot, &pkg) {
+                        // The message exists (and is valid)! Publish her snippet.
+                        found_requirements = true;
+                        break;
+                    }
                 }
+
+                // Publish if we found the target message; else keep waiting
+                if found_requirements {
+                    // Push the message
+                    view.stated.add(Recipient::All, create_message(1, self.id(), include_str!("../slick/amy_1.slick"))).cast()?;
+                    self.state = State::Download;
+                }
+
+                // We're anyhow going to continue running
+                Ok(Poll::Pending)
             },
 
-            // Amy doesn't participate in other examples
-            Script::Section5_4_2 | Script::Section5_4_4 | Script::Section5_4_5 => unreachable!(),
+            State::Download => {
+                // We wait until we see St. Antonius' enacted statement, making the to-be-
+                // downloaded dataset available
+                if view.enacted.contains_key(&(super::st_antonius::ID.into(), 'b')).cast()? {
+                    // Push the message
+                    view.stated.add(Recipient::All, create_message(2, self.id(), include_str!("../slick/amy_2.slick"))).cast()?;
+                    self.state = State::EnactDownload;
+                }
+
+                // Now, in scenario 3, Amy will die unexpectedly, so `(amy a)` never occurs.
+                if self.script == Script::Section5_4_3 {
+                    return Ok(Poll::Ready(()));
+                }
+
+                // We're anyhow going to continue running
+                Ok(Poll::Pending)
+            },
+
+            State::EnactDownload => {
+                // First wait to ensure the required agreement exists
+                let agree_id: (String, u32) = (super::consortium::ID.into(), 1);
+                let agree: &Agreement<_, _> = match view.agreed.get(&agree_id).cast()? {
+                    Some(agree) => agree,
+                    None => return Ok(Poll::Pending),
+                };
+                if !view.times.current().cast()?.contains(&agree.at) {
+                    return Ok(Poll::Pending);
+                }
+
+                // Now we wait until we have all the required messages
+                let mut just: MessageSet<SM> = MessageSet::new();
+                for msg in [
+                    (super::surf::ID.into(), 1),
+                    (super::amy::ID.into(), 1),
+                    (super::amy::ID.into(), 2),
+                    (super::st_antonius::ID.into(), 1),
+                    (super::st_antonius::ID.into(), 2),
+                    (super::st_antonius::ID.into(), 3),
+                ] {
+                    match view.stated.get(&msg).cast()? {
+                        Some(msg) => {
+                            just.add(msg.clone());
+                        },
+                        None => return Ok(Poll::Pending),
+                    }
+                }
+
+                // We have them all; enact!
+                view.enacted.add(Recipient::All, create_action('a', self.id(), agree.clone(), just)).cast()?;
+
+                // Then update the data plane
+                self.handle.read(((self.id(), "count-patients"), "num-patients"), (self.id(), 'a')).cast()?;
+
+                // Amy's done!
+                Ok(Poll::Ready(()))
+            },
         }
     }
 }
