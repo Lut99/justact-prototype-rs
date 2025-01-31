@@ -64,14 +64,14 @@ serde = { version = "1.0.217", features = ["derive", "rc"], optional = true }
 thiserror = "2.0.11"
 
 datalog = { git = "https://github.com/Lut99/datalog-rs", features = ["interpreter", "parser", "reserialize"], optional = true }
-justact = { git = "https://github.com/Lut99/justact-rs", features = ["serde"] }
-slick = { git = "https://github.com/sirkibsirkib/slick", optional = true }
-# stackvec = { git = "https://github.com/Lut99/stackvec-rs" }
+
+justact = { path = "./lib/justact", features = ["serde"] }
+slick = { path = "./lib/slick", optional = true }
 
 
 [dev-dependencies]
 clap = { version = "4.5.27", features = ["derive"] }
-humanlog = { git = "https://github.com/Lut99/humanlog-rs" }
+humanlog = { git = "https://github.com/Lut99/humanlog-rs", tag = "v0.2.0" }
 serde_json = "1.0.137"
 
 

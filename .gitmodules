@@ -1,0 +1,6 @@
+[submodule "lib/justact"]
+	path = lib/justact
+	url = https://github.com/Lut99/justact-rs
+[submodule "lib/slick"]
+	path = lib/slick
+	url = https://github.com/sirkibsirkib/slick
