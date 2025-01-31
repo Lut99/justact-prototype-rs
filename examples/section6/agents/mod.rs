@@ -4,7 +4,7 @@
 //  Created:
 //    14 Jan 2025, 16:50:19
 //  Last edited:
-//    30 Jan 2025, 21:06:07
+//    31 Jan 2025, 15:54:50
 //  Auto updated?
 //    Yes
 //
@@ -140,9 +140,12 @@ pub enum Script {
     /// The second example, that of section 6.3.2.
     #[allow(unused)]
     Section6_3_2,
-    /// The third example, that of section 6.3.3.
-    #[allow(unused)]
-    Section6_3_3,
+    /// The third example, that of section 6.3.3. But now Amy doesn't die.
+    #[allow(unused, non_camel_case_types)]
+    Section6_3_3_ok,
+    /// The third example, that of section 6.3.3. But now Amy DOES die.
+    #[allow(unused, non_camel_case_types)]
+    Section6_3_3_crash,
     /// The fourth example, that of section 6.3.4.
     #[allow(unused)]
     Section6_3_4,

@@ -4,7 +4,7 @@
 //  Created:
 //    15 Jan 2025, 15:57:55
 //  Last edited:
-//    29 Jan 2025, 22:33:42
+//    31 Jan 2025, 18:13:08
 //  Auto updated?
 //    Yes
 //
@@ -18,7 +18,7 @@
 use std::borrow::Cow;
 use std::error;
 use std::fmt::{Display, Formatter, Result as FResult};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::auditing::{Event, EventControl};
 use crate::sets::{Agreements, MapAsync, MapAsyncView, Times};
@@ -35,7 +35,7 @@ mod justact {
 
 /***** GLOBALS *****/
 /// Defines \*some\* [`EventHandler`] that will handle trace callbacks.
-pub(crate) static EVENT_HANDLER: OnceLock<RwLock<Box<dyn EventHandler>>> = OnceLock::new();
+pub(crate) static EVENT_HANDLER: OnceLock<Mutex<Box<dyn EventHandler>>> = OnceLock::new();
 
 
 
@@ -85,7 +85,13 @@ pub trait EventHandler: 'static + Send + Sync {
     ///
     /// # Errors
     /// This trace is allowed to error, but it should return it as a dynamic (`'static`) object.
-    fn handle(&self, trace: Event) -> Result<(), Box<dyn 'static + Send + error::Error>>;
+    fn handle(&mut self, trace: Event) -> Result<(), Box<dyn 'static + Send + error::Error>>;
+}
+
+// Blanket impls
+impl<T: EventHandler> EventHandler for Box<T> {
+    #[inline]
+    fn handle(&mut self, trace: Event) -> Result<(), Box<dyn 'static + Send + error::Error>> { <T as EventHandler>::handle(self, trace) }
 }
 
 
@@ -97,7 +103,7 @@ pub trait EventHandler: 'static + Send + Sync {
 ///
 /// # Arguments
 /// - `handler`: The [`EventHandler`] to register.
-pub fn register_event_handler(handler: impl EventHandler) { let _ = EVENT_HANDLER.set(RwLock::new(Box::new(handler))); }
+pub fn register_event_handler(handler: impl EventHandler) { let _ = EVENT_HANDLER.set(Mutex::new(Box::new(handler))); }
 
 
 
@@ -181,7 +187,7 @@ impl<'s, 'i> justact::MapAsync<str, Action> for TracingSet<MapAsyncView<'s, 'i, 
         EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
-            .read()
+            .lock()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
             .handle(Event::Control(EventControl::EnactAction { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), action: elem }))
             .map_err(|err| Error::EventHandle { err })?;
@@ -228,7 +234,7 @@ impl justact::MapSync<Agreement> for TracingSet<Agreements> {
         EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
-            .read()
+            .lock()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
             .handle(Event::Control(EventControl::AddAgreement { agree: elem }))
             .map_err(|err| Error::EventHandle { err })?;
@@ -278,7 +284,7 @@ impl<'s, 'i> justact::MapAsync<str, Arc<Message>> for TracingSet<MapAsyncView<'s
         EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
-            .read()
+            .lock()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
             .handle(Event::Control(EventControl::StateMessage { who: Cow::Borrowed(self.0.id), to: selector.map(Cow::Borrowed), msg: elem }))
             .map_err(|err| Error::EventHandle { err })?;
@@ -329,7 +335,7 @@ impl justact::TimesSync for TracingSet<Times> {
         EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
-            .read()
+            .lock()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
             .handle(Event::Control(EventControl::AdvanceTime { timestamp }))
             .map_err(|err| Error::EventHandle { err })?;

@@ -1,30 +1,28 @@
-//  SECTION 6.3.5.rs
+//  SECTION 6.3.3 - OK.rs
 //    by Lut99
 //
 //  Created:
-//    22 Jan 2025, 16:57:21
+//    30 Jan 2025, 18:28:07
 //  Last edited:
-//    30 Jan 2025, 21:06:07
+//    31 Jan 2025, 18:15:38
 //  Auto updated?
 //    Yes
 //
 //  Description:
-//!   Implements the fifth example from section 5.4 of the JustAct paper
-//!   \[1\].
+//!   Implements the third example from the paper.
 //
 
 mod agents;
-mod error;
 mod trace;
 
-use agents::{Agent, Consortium, Script, StAntonius};
+use agents::{Agent, Amy, Bob, Consortium, Dan, Script, StAntonius, Surf};
 use clap::Parser;
 use error_trace::trace;
 use humanlog::{DebugMode, HumanLogger};
 use justact::runtime::Runtime as _;
 use justact_prototype::dataplane::StoreHandle;
 use justact_prototype::runtime::Runtime;
-use log::{error, info};
+use log::{debug, error, info};
 
 
 /***** ARGUMENTS *****/
@@ -37,6 +35,10 @@ struct Arguments {
     /// If given, enables additional TRACE-level statements. Implies `--debug`.
     #[clap(long, global = true)]
     trace: bool,
+
+    /// Where to output the trace to. Use '-' to output to stdout.
+    #[clap(short, long, default_value = "-")]
+    output: String,
 }
 
 
@@ -63,12 +65,30 @@ fn main() {
     info!("{} - v{}", env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"));
 
     // Setup the trace callback
-    justact_prototype::io::register_event_handler(trace::StdoutEventHandler);
+    if args.output == "-" {
+        debug!("Registering stdout event handler");
+        justact_prototype::io::register_event_handler(trace::StdoutEventHandler);
+    } else {
+        debug!("Registering file event handler to {:?}", args.output);
+        match trace::FileEventHandler::new(&args.output) {
+            Ok(handler) => justact_prototype::io::register_event_handler(handler),
+            Err(err) => {
+                error!("{}", trace!(("Failed to create file {:?} to write events to", args.output), err));
+                std::process::exit(1);
+            },
+        }
+    }
 
     // Create the agents
     let dataplane = StoreHandle::new();
-    let agents: [Agent; 1] = [StAntonius::new(Script::Section6_3_5, &dataplane).into()];
-    let sync = Consortium::new(Script::Section6_3_5);
+    let agents: [Agent; 5] = [
+        Amy::new(Script::Section6_3_3_ok, &dataplane).into(),
+        Bob::new(Script::Section6_3_3_ok, &dataplane).into(),
+        Dan::new(Script::Section6_3_3_ok).into(),
+        StAntonius::new(Script::Section6_3_3_ok, &dataplane).into(),
+        Surf::new(Script::Section6_3_3_ok, &dataplane).into(),
+    ];
+    let sync = Consortium::new(Script::Section6_3_3_ok);
 
     // Run the runtime!
     let mut runtime = Runtime::new();

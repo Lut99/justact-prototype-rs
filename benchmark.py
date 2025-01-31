@@ -5,7 +5,7 @@
 # Created:
 #   31 Jan 2025, 10:37:03
 # Last edited:
-#   31 Jan 2025, 11:12:51
+#   31 Jan 2025, 17:41:13
 # Auto updated?
 #   Yes
 #
@@ -16,9 +16,10 @@
 #   Concretely, this will be:
 #    - `section6-3-1`
 #    - `section6-3-2`
-#    - `section6-3-3`
+#    - `section6-3-3-ok`
 #    - `section6-3-4`
 #    - `section6-3-5`
+#   (not `section6-3-3-crash`, as that one doesn't terminate)
 #
 
 import argparse
@@ -32,7 +33,7 @@ from typing import List
 
 
 ##### CONSTANTS #####
-EXAMPLES = ["section6-3-1", "section6-3-2", "section6-3-3", "section6-3-4", "section6-3-5"]
+EXAMPLES = ["section6-3-1", "section6-3-2", "section6-3-3-ok", "section6-3-4", "section6-3-5"]
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 

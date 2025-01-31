@@ -4,7 +4,7 @@
 //  Created:
 //    29 Jan 2025, 23:05:56
 //  Last edited:
-//    29 Jan 2025, 23:26:30
+//    31 Jan 2025, 18:18:17
 //  Auto updated?
 //    Yes
 //
@@ -41,7 +41,7 @@ use log::{error, info};
 pub struct StdoutEventHandler;
 impl EventHandler for StdoutEventHandler {
     #[inline]
-    fn handle(&self, event: Event) -> Result<(), Box<dyn 'static + Send + error::Error>> {
+    fn handle(&mut self, event: Event) -> Result<(), Box<dyn 'static + Send + error::Error>> {
         println!("{}", serde_json::to_string(&event).map_err(|err| -> Box<dyn 'static + Send + error::Error> { Box::new(err) })?);
         Ok(())
     }

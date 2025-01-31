@@ -4,7 +4,7 @@
 //  Created:
 //    21 Jan 2025, 11:01:12
 //  Last edited:
-//    29 Jan 2025, 22:37:26
+//    31 Jan 2025, 18:12:55
 //  Auto updated?
 //    Yes
 //
@@ -209,7 +209,7 @@ impl StoreHandle {
         EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
-            .read()
+            .lock()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
             .handle(Event::Data(EventData::Read {
                 who: who.into(),
@@ -256,7 +256,7 @@ impl StoreHandle {
         EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
-            .read()
+            .lock()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
             .handle(Event::Data(EventData::Write {
                 who: Cow::Borrowed(who),

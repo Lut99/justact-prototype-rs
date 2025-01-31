@@ -4,7 +4,7 @@
 //  Created:
 //    15 Apr 2024, 16:13:37
 //  Last edited:
-//    29 Jan 2025, 21:15:51
+//    31 Jan 2025, 15:33:03
 //  Auto updated?
 //    Yes
 //
@@ -16,6 +16,7 @@
 pub mod auditing;
 #[cfg(feature = "dataplane")]
 pub mod dataplane;
+pub mod events;
 pub mod io;
 pub mod policy;
 pub mod runtime;

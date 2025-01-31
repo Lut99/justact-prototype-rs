@@ -10,27 +10,31 @@ description = "Provides an implementation of a simple demo environment that simu
 
 [[example]]
 name = "section6-3-1"
-path = "examples/section5/section6.3.1.rs"
+path = "examples/section6/section6.3.1.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
 [[example]]
 name = "section6-3-2"
-path = "examples/section5/section6.3.2.rs"
+path = "examples/section6/section6.3.2.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
 [[example]]
-name = "section6-3-3"
-path = "examples/section5/section6.3.3.rs"
+name = "section6-3-3-ok"
+path = "examples/section6/section6.3.3_ok.rs"
+required-features = ["dataplane", "log", "serde", "slick"]
+[[example]]
+name = "section6-3-3-crash"
+path = "examples/section6/section6.3.3_crash.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
 [[example]]
 name = "section6-3-4"
-path = "examples/section5/section6.3.4.rs"
+path = "examples/section6/section6.3.4.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
 [[example]]
 name = "section6-3-5"
-path = "examples/section5/section6.3.5.rs"
+path = "examples/section6/section6.3.5.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
 [[example]]

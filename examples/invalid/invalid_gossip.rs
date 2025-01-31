@@ -4,7 +4,7 @@
 //  Created:
 //    26 Jan 2025, 17:40:50
 //  Last edited:
-//    29 Jan 2025, 22:35:27
+//    31 Jan 2025, 18:18:23
 //  Auto updated?
 //    Yes
 //
@@ -49,7 +49,7 @@ enum Behaviour {
 pub struct StdoutEventHandler;
 impl EventHandler for StdoutEventHandler {
     #[inline]
-    fn handle(&self, event: Event) -> Result<(), Box<dyn 'static + Send + error::Error>> {
+    fn handle(&mut self, event: Event) -> Result<(), Box<dyn 'static + Send + error::Error>> {
         println!("{}", serde_json::to_string(&event).map_err(|err| -> Box<dyn 'static + Send + error::Error> { Box::new(err) })?);
         Ok(())
     }

@@ -4,7 +4,7 @@
 //  Created:
 //    22 Jan 2025, 16:57:21
 //  Last edited:
-//    30 Jan 2025, 21:06:07
+//    31 Jan 2025, 18:15:44
 //  Auto updated?
 //    Yes
 //
@@ -14,7 +14,6 @@
 //
 
 mod agents;
-mod error;
 mod trace;
 
 use agents::{Agent, Consortium, Script, StAntonius, Surf};
@@ -24,7 +23,7 @@ use humanlog::{DebugMode, HumanLogger};
 use justact::runtime::Runtime as _;
 use justact_prototype::dataplane::StoreHandle;
 use justact_prototype::runtime::Runtime;
-use log::{error, info};
+use log::{debug, error, info};
 
 
 /***** ARGUMENTS *****/
@@ -37,6 +36,10 @@ struct Arguments {
     /// If given, enables additional TRACE-level statements. Implies `--debug`.
     #[clap(long, global = true)]
     trace: bool,
+
+    /// Where to output the trace to. Use '-' to output to stdout.
+    #[clap(short, long, default_value = "-")]
+    output: String,
 }
 
 
@@ -63,7 +66,19 @@ fn main() {
     info!("{} - v{}", env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"));
 
     // Setup the trace callback
-    justact_prototype::io::register_event_handler(trace::StdoutEventHandler);
+    if args.output == "-" {
+        debug!("Registering stdout event handler");
+        justact_prototype::io::register_event_handler(trace::StdoutEventHandler);
+    } else {
+        debug!("Registering file event handler to {:?}", args.output);
+        match trace::FileEventHandler::new(&args.output) {
+            Ok(handler) => justact_prototype::io::register_event_handler(handler),
+            Err(err) => {
+                error!("{}", trace!(("Failed to create file {:?} to write events to", args.output), err));
+                std::process::exit(1);
+            },
+        }
+    }
 
     // Create the agents
     let dataplane = StoreHandle::new();
