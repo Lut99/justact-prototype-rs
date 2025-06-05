@@ -40,7 +40,7 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 
 use crate::event_iter::EventIter;
-use crate::widgets::scroll_area::ScrollState;
+use crate::widgets::scroll_area::{ScrollArea, ScrollState};
 
 
 /***** ERRORS *****/
@@ -192,10 +192,8 @@ struct State {
     selected_event: ListState,
     /// The currently opened trace.
     opened_event: Option<usize>,
-    /// The horizontal scroll state of the right pane.
-    right_hscroll: ScrollState,
-    /// The vertical scroll state of the right pane.
-    right_vscroll: ScrollState,
+    /// The scroll state of the right pane.
+    right_scroll: ScrollState,
 }
 impl State {
     /// Constructor for the State that initializes it to default.
@@ -215,8 +213,7 @@ impl State {
             focus: Focus::List,
             selected_event: ListState::default(),
             opened_event: None,
-            right_hscroll: ScrollState::default(),
-            right_vscroll: ScrollState::default(),
+            right_scroll: ScrollState::default(),
         }
     }
 
@@ -234,8 +231,7 @@ impl State {
             trace: self.trace.lock(),
             selected_event: &mut self.selected_event,
             opened_event: &mut self.opened_event,
-            right_hscroll: &mut self.right_hscroll,
-            right_vscroll: &mut self.right_vscroll,
+            right_scroll: &mut self.right_scroll,
         }
     }
 }
@@ -254,10 +250,8 @@ struct StateGuard<'s> {
     selected_event: &'s mut ListState,
     /// The currently opened trace.
     opened_event: &'s mut Option<usize>,
-    /// The horizontal scroll state of the right pane.
-    right_hscroll: &'s mut ScrollState,
-    /// The vertical scroll state of the right pane.
-    right_vscroll: &'s mut ScrollState,
+    /// The scroll state of the right pane.
+    right_scroll: &'s mut ScrollState,
 }
 
 
@@ -538,61 +532,73 @@ impl<'s> StateGuard<'s> {
             match trace {
                 Event::Control(trace) => match trace {
                     EventControl::AddAgreement { agree } => {
-                        // Prepare the layout
+                        // Compute the size of the inner area of the scroll area
                         let text = Text::from(agree.message.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
-                        let vrects = Layout::vertical(
-                            Some(Constraint::Length(1)).into_iter().cycle().take(4).chain(Some(Constraint::Length(2 + text.height() as u16))),
-                        )
-                        .split(block.inner(body_rects[1]));
+                        let inner: Rect = Rect::new(0, 0, std::cmp::max(40, 2 + text.width() as u16), 4 + 2 + text.height() as u16);
 
-                        // Render the ID & at times
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Agreement identifier: ");
-                                text.push_span(Span::from(format!("{} {}", agree.message.id.0, agree.message.id.1)).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[0],
-                        );
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Agreement author    : ");
-                                text.push_span(Span::from(&agree.message.id.0).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[1],
-                        );
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Agreement valid at  : ");
-                                text.push_span(Span::from(agree.at.to_string()).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[2],
-                        );
+                        // Render with the scroll area
+                        frame.render_stateful_widget(
+                            ScrollArea::new(inner).render_inner(move |mut frame| {
+                                // Prepare the layout
+                                let vrects = Layout::vertical(
+                                    Some(Constraint::Length(1)).into_iter().cycle().take(4).chain(Some(Constraint::Length(2 + text.height() as u16))),
+                                )
+                                .split(frame.area());
 
-                        // Render the payload
-                        // TODO: Scroll
-                        frame
-                            .render_widget(Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)), vrects[4]);
+                                // Render the ID & at times
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Agreement identifier: ");
+                                        text.push_span(Span::from(format!("{} {}", agree.message.id.0, agree.message.id.1)).bold());
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[0],
+                                );
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Agreement author    : ");
+                                        text.push_span(Span::from(&agree.message.id.0).bold());
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[1],
+                                );
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Agreement valid at  : ");
+                                        text.push_span(Span::from(agree.at.to_string()).bold());
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[2],
+                                );
+
+                                // Render the payload
+                                frame.render_widget(
+                                    Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)),
+                                    vrects[4],
+                                );
+                            }),
+                            block.inner(body_rects[1]),
+                            &mut self.right_scroll,
+                        );
                     },
                     EventControl::AdvanceTime { timestamp } => {
-                        // Render the time
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Time advanced to: ");
-                                text.push_span(Span::from(timestamp.to_string()).bold());
-                                text
-                            })
-                            .fg(right_color),
+                        // Render with the scroll area
+                        let mut text = Text::from("Time advanced to: ");
+                        text.push_span(Span::from(timestamp.to_string()).bold());
+                        frame.render_stateful_widget(
+                            ScrollArea::new(Rect::new(0, 0, text.width() as u16, text.height() as u16)).render_inner(|mut frame| {
+                                // Render the time
+                                frame.render_widget(Paragraph::new(text).fg(right_color), frame.area());
+                            }),
                             block.inner(body_rects[1]),
+                            &mut self.right_scroll,
                         );
                     },
                     EventControl::EnactAction { who, to, action } => {
-                        // Prepare the layout
+                        // First, compute the denotation and decide if this was permitted
                         let denot: Result<(&Permission, Text<'static>), _> = self
                             .audit
                             .permission_of(*i)
@@ -617,257 +623,271 @@ impl<'s> StateGuard<'s> {
                                     text
                                 })
                             });
-                        let vrects = Layout::vertical(
-                            [Constraint::Length(1); 13]
-                                .into_iter()
-                                .chain([Constraint::Length(1)].into_iter().cycle().take({
-                                    let n: usize = denot.as_ref().map(|(p, _)| p.effects.len()).unwrap_or(0);
-                                    if n > 0 { n } else { 1 }
-                                }))
-                                .chain([Constraint::Length(denot.as_ref().map(|(_, text)| 2 + text.height() as u16).unwrap_or(0))]),
-                        )
-                        .split(block.inner(body_rects[1]));
 
-                        // Render who sent it to whom
-                        let mut i: usize = 0;
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Enacted by: ");
-                                text.push_span(Span::from(who.as_ref()).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[i],
-                        );
-                        i += 1;
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Enacted to: ");
-                                text.push_span(
-                                    Span::from(match to {
-                                        Recipient::All => "<everyone>",
-                                        Recipient::One(agent) => agent.as_ref(),
-                                    })
-                                    .bold(),
-                                );
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[i],
-                        );
-                        i += 2;
+                        // Then compute the total size of the needed inner area
+                        let effect_height: usize = std::cmp::max(denot.as_ref().map(|(p, _)| p.effects.len()).unwrap_or(0), 1);
+                        let (denot_width, denot_height): (u16, u16) =
+                            denot.as_ref().map(|(_, text)| (2 + text.width() as u16, 2 + text.height() as u16)).unwrap_or((0, 0));
+                        let inner: Rect = Rect::new(0, 0, std::cmp::max(40, denot_width), 13 + effect_height as u16 + denot_height);
 
-                        // Render the ID & at times
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Action identifier: ");
-                                text.push_span(Span::from(format!("{} {}", action.id.0, action.id.1)).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[i],
-                        );
-                        i += 1;
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Action actor     : ");
-                                text.push_span(Span::from(&action.id.0).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[i],
-                        );
-                        i += 1;
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Action taken at  : ");
-                                text.push_span(Span::from(action.basis.at.to_string()).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[i],
-                        );
-                        i += 2;
+                        // Render the information scrolled
+                        frame.render_stateful_widget(
+                            ScrollArea::new(inner).render_inner(|mut frame| {
+                                let vrects = Layout::vertical(
+                                    [Constraint::Length(1); 13]
+                                        .into_iter()
+                                        .chain([Constraint::Length(1)].into_iter().cycle().take(effect_height))
+                                        .chain([Constraint::Length(denot_height)]),
+                                )
+                                .split(frame.area());
 
-                        // Render the messages part of it
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Basis         : ");
-                                text.push_span(Span::from(format!("{} {}", action.basis.message.id.0, action.basis.message.id.1)).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[i],
-                        );
-                        i += 1;
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Justification : ");
-                                if !action.justification.is_empty() {
-                                    let mut msgs: Vec<&Arc<Message>> = action.justification.iter().collect();
-                                    msgs.sort_by(|lhs, rhs| lhs.id.0.cmp(&rhs.id.0).then_with(|| lhs.id.1.cmp(&rhs.id.1)));
-                                    for (i, msg) in msgs.into_iter().enumerate() {
-                                        if i > 0 && i < action.justification.len() - 1 {
-                                            text.push_span(", ");
-                                        } else if i > 0 {
-                                            text.push_span(" and ");
-                                        }
-                                        text.push_span(Span::from(format!("{} {}", msg.id.0, msg.id.1)).bold());
-                                    }
-                                } else {
-                                    text.push_span(" <empty>");
-                                }
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[i],
-                        );
-                        i += 2;
-
-                        // Render the interpretation part of it
-                        match denot {
-                            Ok((perm, truths)) => {
-                                // Permission
+                                // Render who sent it to whom
+                                let mut i: usize = 0;
                                 frame.render_widget(
                                     Paragraph::new({
-                                        let mut text = Text::from("Permission : ");
-                                        if perm.is_permitted() {
-                                            text.push_span(Span::from("OK").bold().green());
-                                        } else {
-                                            text.push_span(Span::from("ILLEGAL").bold().red());
-                                            text.push_span(" (");
-                                            let mut first: bool = true;
-                                            if !perm.stated {
-                                                text.push_span(Span::from("not stated").red());
-                                                first = false;
-                                            }
-                                            if !perm.based {
-                                                if !first {
-                                                    text.push_span(", ");
-                                                }
-                                                text.push_span(Span::from("not based").red());
-                                                first = false;
-                                            }
-                                            if !perm.valid {
-                                                if !first {
-                                                    text.push_span(", ");
-                                                }
-                                                text.push_span(Span::from("not valid").red());
-                                                first = false;
-                                            }
-                                            if !perm.current {
-                                                if !first {
-                                                    text.push_span(", ");
-                                                }
-                                                text.push_span(Span::from("not current").red());
-                                            }
-                                            text.push_span(")");
-                                        }
+                                        let mut text = Text::from("Enacted by: ");
+                                        text.push_span(Span::from(who.as_ref()).bold());
                                         text
                                     })
                                     .fg(right_color),
                                     vrects[i],
                                 );
                                 i += 1;
-                                // Effects
-                                frame.render_widget(Paragraph::new("Effects    : ").fg(right_color), vrects[i]);
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Enacted to: ");
+                                        text.push_span(
+                                            Span::from(match to {
+                                                Recipient::All => "<everyone>",
+                                                Recipient::One(agent) => agent.as_ref(),
+                                            })
+                                            .bold(),
+                                        );
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[i],
+                                );
+                                i += 2;
+
+                                // Render the ID & at times
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Action identifier: ");
+                                        text.push_span(Span::from(format!("{} {}", action.id.0, action.id.1)).bold());
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[i],
+                                );
                                 i += 1;
-                                if !perm.effects.is_empty() {
-                                    for effect in &perm.effects {
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Action actor     : ");
+                                        text.push_span(Span::from(&action.id.0).bold());
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[i],
+                                );
+                                i += 1;
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Action taken at  : ");
+                                        text.push_span(Span::from(action.basis.at.to_string()).bold());
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[i],
+                                );
+                                i += 2;
+
+                                // Render the messages part of it
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Basis         : ");
+                                        text.push_span(Span::from(format!("{} {}", action.basis.message.id.0, action.basis.message.id.1)).bold());
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[i],
+                                );
+                                i += 1;
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Justification : ");
+                                        if !action.justification.is_empty() {
+                                            let mut msgs: Vec<&Arc<Message>> = action.justification.iter().collect();
+                                            msgs.sort_by(|lhs, rhs| lhs.id.0.cmp(&rhs.id.0).then_with(|| lhs.id.1.cmp(&rhs.id.1)));
+                                            for (i, msg) in msgs.into_iter().enumerate() {
+                                                if i > 0 && i < action.justification.len() - 1 {
+                                                    text.push_span(", ");
+                                                } else if i > 0 {
+                                                    text.push_span(" and ");
+                                                }
+                                                text.push_span(Span::from(format!("{} {}", msg.id.0, msg.id.1)).bold());
+                                            }
+                                        } else {
+                                            text.push_span(" <empty>");
+                                        }
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[i],
+                                );
+                                i += 2;
+
+                                // Render the interpretation part of it
+                                match denot {
+                                    Ok((perm, truths)) => {
+                                        // Permission
                                         frame.render_widget(
                                             Paragraph::new({
-                                                let mut text = Text::from(" - ");
-                                                text.push_span(Span::from(format!("{:?}", effect.fact)).bold());
+                                                let mut text = Text::from("Permission : ");
+                                                if perm.is_permitted() {
+                                                    text.push_span(Span::from("OK").bold().green());
+                                                } else {
+                                                    text.push_span(Span::from("ILLEGAL").bold().red());
+                                                    text.push_span(" (");
+                                                    let mut first: bool = true;
+                                                    if !perm.stated {
+                                                        text.push_span(Span::from("not stated").red());
+                                                        first = false;
+                                                    }
+                                                    if !perm.based {
+                                                        if !first {
+                                                            text.push_span(", ");
+                                                        }
+                                                        text.push_span(Span::from("not based").red());
+                                                        first = false;
+                                                    }
+                                                    if !perm.valid {
+                                                        if !first {
+                                                            text.push_span(", ");
+                                                        }
+                                                        text.push_span(Span::from("not valid").red());
+                                                        first = false;
+                                                    }
+                                                    if !perm.current {
+                                                        if !first {
+                                                            text.push_span(", ");
+                                                        }
+                                                        text.push_span(Span::from("not current").red());
+                                                    }
+                                                    text.push_span(")");
+                                                }
                                                 text
                                             })
                                             .fg(right_color),
                                             vrects[i],
                                         );
                                         i += 1;
-                                    }
-                                } else {
-                                    frame.render_widget(Paragraph::new("   <none>").fg(right_color), vrects[i]);
-                                    i += 1;
-                                }
-                                i += 1;
+                                        // Effects
+                                        frame.render_widget(Paragraph::new("Effects    : ").fg(right_color), vrects[i]);
+                                        i += 1;
+                                        if !perm.effects.is_empty() {
+                                            for effect in &perm.effects {
+                                                frame.render_widget(
+                                                    Paragraph::new({
+                                                        let mut text = Text::from(" - ");
+                                                        text.push_span(Span::from(format!("{:?}", effect.fact)).bold());
+                                                        text
+                                                    })
+                                                    .fg(right_color),
+                                                    vrects[i],
+                                                );
+                                                i += 1;
+                                            }
+                                        } else {
+                                            frame.render_widget(Paragraph::new("   <none>").fg(right_color), vrects[i]);
+                                            i += 1;
+                                        }
+                                        i += 1;
 
-                                // Finally, the denotation
-                                // frame.render_stateful_widget(
-                                //     ScrollArea::new(
-                                //         Paragraph::new(truths.clone())
-                                //             .block(Block::bordered().title("Justification truths").fg(right_color))
-                                //             .fg(right_color),
-                                //         (2 + truths.width() as u16, 2 + truths.height() as u16),
-                                //     ),
-                                frame.render_widget(
-                                    Paragraph::new(truths.clone())
-                                        .block(Block::bordered().title("Justification truths").fg(right_color))
-                                        .fg(right_color),
-                                    vrects[i],
-                                    // &mut self.right_hscroll,
-                                );
-                            },
-                            Err(_) => todo!(),
-                        }
+                                        // Finally, the denotation
+                                        frame.render_widget(
+                                            Paragraph::new(truths.clone())
+                                                .block(Block::bordered().title("Justification truths").fg(right_color))
+                                                .fg(right_color),
+                                            vrects[i],
+                                        );
+                                    },
+                                    Err(_) => todo!(),
+                                }
+                            }),
+                            block.inner(body_rects[1]),
+                            &mut self.right_scroll,
+                        );
                     },
                     EventControl::StateMessage { who, to, msg } => {
-                        // Prepare the layout
+                        // Compute the size of the total info area
                         let text = Text::from(msg.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
-                        let vrects = Layout::vertical(
-                            Some(Constraint::Length(1)).into_iter().cycle().take(6).chain(Some(Constraint::Length(2 + text.height() as u16))),
-                        )
-                        .split(block.inner(body_rects[1]));
+                        let inner: Rect = Rect::new(0, 0, std::cmp::max(40, 2 + text.width() as u16), 6 + 2 + text.height() as u16);
 
-                        // Render who sent it to whom
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Stated by: ");
-                                text.push_span(Span::from(who.as_ref()).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[0],
-                        );
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Stated to: ");
-                                text.push_span(
-                                    Span::from(match to {
-                                        Recipient::All => "<everyone>",
-                                        Recipient::One(agent) => agent.as_ref(),
+                        // Render in a scrolled area
+                        frame.render_stateful_widget(
+                            ScrollArea::new(inner).render_inner(|mut frame| {
+                                // Prepare the layout
+                                let vrects = Layout::vertical(
+                                    Some(Constraint::Length(1)).into_iter().cycle().take(6).chain(Some(Constraint::Length(2 + text.height() as u16))),
+                                )
+                                .split(frame.area());
+
+                                // Render who sent it to whom
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Stated by: ");
+                                        text.push_span(Span::from(who.as_ref()).bold());
+                                        text
                                     })
-                                    .bold(),
+                                    .fg(right_color),
+                                    vrects[0],
                                 );
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[1],
-                        );
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Stated to: ");
+                                        text.push_span(
+                                            Span::from(match to {
+                                                Recipient::All => "<everyone>",
+                                                Recipient::One(agent) => agent.as_ref(),
+                                            })
+                                            .bold(),
+                                        );
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[1],
+                                );
 
-                        // Render the ID
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Message identifier: ");
-                                text.push_span(Span::from(format!("{} {}", msg.id.0, msg.id.1)).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[3],
-                        );
-                        frame.render_widget(
-                            Paragraph::new({
-                                let mut text = Text::from("Message author    : ");
-                                text.push_span(Span::from(&msg.id.0).bold());
-                                text
-                            })
-                            .fg(right_color),
-                            vrects[4],
-                        );
+                                // Render the ID
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Message identifier: ");
+                                        text.push_span(Span::from(format!("{} {}", msg.id.0, msg.id.1)).bold());
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[3],
+                                );
+                                frame.render_widget(
+                                    Paragraph::new({
+                                        let mut text = Text::from("Message author    : ");
+                                        text.push_span(Span::from(&msg.id.0).bold());
+                                        text
+                                    })
+                                    .fg(right_color),
+                                    vrects[4],
+                                );
 
-                        // Render the basis payload
-                        // TODO: Scroll
-                        frame
-                            .render_widget(Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)), vrects[6]);
+                                // Render the basis payload
+                                frame.render_widget(
+                                    Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)),
+                                    vrects[6],
+                                );
+                            }),
+                            block.inner(body_rects[1]),
+                            &mut self.right_scroll,
+                        );
                     },
                 },
 
@@ -1163,8 +1183,7 @@ impl<'s> StateGuard<'s> {
                     // Make the currently selected one, opened
                     *self.opened_event = self.selected_event.selected();
                     *self.focus = Focus::Event;
-                    self.right_hscroll.reset();
-                    self.right_vscroll.reset();
+                    self.right_scroll.reset();
                 }
                 Ok(ControlFlow::Continue(()))
             },
@@ -1179,14 +1198,13 @@ impl<'s> StateGuard<'s> {
                     // Also update the opened one if any
                     if self.opened_event.is_some() {
                         *self.opened_event = self.selected_event.selected();
-                        self.right_hscroll.reset();
-                        self.right_vscroll.reset();
+                        self.right_scroll.reset();
                         if self.opened_event.is_none() {
                             *self.focus = Focus::List;
                         }
                     }
                 } else if *self.focus == Focus::Event {
-                    self.right_vscroll.scroll_up();
+                    self.right_scroll.scroll_up();
                 }
                 Ok(ControlFlow::Continue(()))
             },
@@ -1201,26 +1219,25 @@ impl<'s> StateGuard<'s> {
                     // Also update the opened one if any
                     if self.opened_event.is_some() {
                         *self.opened_event = self.selected_event.selected();
-                        self.right_hscroll.reset();
-                        self.right_vscroll.reset();
+                        self.right_scroll.reset();
                         if self.opened_event.is_none() {
                             *self.focus = Focus::List;
                         }
                     }
                 } else if *self.focus == Focus::Event {
-                    self.right_vscroll.scroll_down();
+                    self.right_scroll.scroll_down();
                 }
                 Ok(ControlFlow::Continue(()))
             },
             CEvent::Key(KeyEvent { code: KeyCode::Left, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
                 if *self.focus == Focus::Event {
-                    self.right_hscroll.scroll_left();
+                    self.right_scroll.scroll_left();
                 }
                 Ok(ControlFlow::Continue(()))
             },
             CEvent::Key(KeyEvent { code: KeyCode::Right, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: _ }) => {
                 if *self.focus == Focus::Event {
-                    self.right_hscroll.scroll_right();
+                    self.right_scroll.scroll_right();
                 }
                 Ok(ControlFlow::Continue(()))
             },

@@ -32,12 +32,11 @@ use ratatui::widgets::{Block, StatefulWidget, Widget};
 /// - `outer_buf`: The outside area to copy a smaller part of the `inner_buf` to.
 fn scroll(scroll: (u16, u16), outer: Rect, inner: Rect, inner_buf: &Buffer, outer_buf: &mut Buffer) {
     // Next, decide which part of the inner window to copy
-    let pos: (u16, u16) = (min(scroll.0, outer.width), min(scroll.1, outer.height));
     let cut: Rect = Rect::new(
-        pos.0,
-        pos.1,
-        if inner.width >= outer.width { outer.width - pos.0 } else { inner.width },
-        if inner.height >= outer.height { outer.height - pos.1 } else { inner.height },
+        scroll.0,
+        scroll.1,
+        outer.width - if scroll.0 + outer.width > inner.width { (scroll.0 + outer.width) - inner.width } else { 0 },
+        outer.height - if scroll.1 + outer.height > inner.height { (scroll.1 + outer.height) - inner.height } else { 0 },
     );
 
     // Then we copy that part into the output buffer (with the appropriate offsets)
@@ -59,45 +58,71 @@ fn scroll(scroll: (u16, u16), outer: Rect, inner: Rect, inner_buf: &Buffer, oute
 
 
 /***** AUXILLARY *****/
-/// The state that keeps track of the current scroll position of a [`ScrollArea`].
-///
-/// This version assumes that no widget state is kept (i.e., the state is [`()`]).
-pub type ScrollState = StatefulScrollState<()>;
+/// Something [`Frame`](ratatui::Frame)-like but not really.
+#[derive(Debug)]
+pub struct ScrollFrame<'a> {
+    /// The buffer we're referencing.
+    buffer: &'a mut Buffer,
+    /// The render area.
+    area:   Rect,
+}
+impl<'a> ScrollFrame<'a> {
+    /// Returns the area of the current frame.
+    ///
+    /// Like [`Frame::area()`](ratatui::Frame::area()), this value is guaranteed not to change.
+    ///
+    /// # Returns
+    /// A [`Rect`] representing the rendered area.
+    #[inline]
+    pub const fn area(&self) -> Rect { self.area }
+
+    /// Renders a particular [`Widget`] to the backend buffer.
+    ///
+    /// # Arguments
+    /// - `widget`: The [`Widget`] to render.
+    /// - `area`: Some [`Rect`] describing to what area of the buffer to render to.
+    #[inline]
+    pub fn render_widget(&mut self, widget: impl Widget, area: Rect) { widget.render(area, self.buffer) }
+
+    /// Renders a particular [`StatefulWidget`] to the backend buffer.
+    ///
+    /// # Arguments
+    /// - `widget`: The [`StatefulWidget`] to render.
+    /// - `area`: Some [`Rect`] describing to what area of the buffer to render to.
+    /// - `state`: The `widget`'s state to update while rendering.
+    #[inline]
+    pub fn render_stateful_widget<W: StatefulWidget>(&mut self, widget: W, area: Rect, state: &mut W::State) {
+        widget.render(area, self.buffer, state)
+    }
+}
 
 
 
 /// The state that is adapted such that the [`ScrollArea`] scrolls.
-///
-/// This version assumes that the nested widget is stateful.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct StatefulScrollState<S> {
+pub struct ScrollState {
     /// The coordinates that offset the scroll area (as an x x y pair).
     pos:   (u16, u16),
     /// A buffer for caching purposes.
     cache: Buffer,
-    /// The nested state to pass to the ScrollArea.
-    state: S,
 }
 
 // Constructors
-impl<S: Default> Default for StatefulScrollState<S> {
+impl Default for ScrollState {
     #[inline]
-    fn default() -> Self { Self { pos: (0, 0), cache: Buffer::empty(Rect::ZERO), state: Default::default() } }
+    fn default() -> Self { Self::new() }
 }
-impl<S> StatefulScrollState<S> {
-    /// Constructs a new StatefulScrollState.
-    ///
-    /// # Arguments
-    /// - `state`: A nested `S`tate of a nested widget to pass to it when rendering.
+impl ScrollState {
+    /// Constructs a new ScrollState.
     ///
     /// # Returns
-    /// A new StatefulScrollState ready for keeping track of scroll states.
+    /// A new ScrollState ready for keeping track of scroll states.
     #[inline]
-    pub fn with_state(state: S) -> Self { Self { pos: (0, 0), cache: Buffer::empty(Rect::ZERO), state } }
+    pub fn new() -> Self { Self { pos: (0, 0), cache: Buffer::empty(Rect::ZERO) } }
 }
 
 // Scrolling
-impl<S> StatefulScrollState<S> {
+impl ScrollState {
     /// Scrolls the scroll area to the start (topleft-most).
     ///
     /// # Returns
@@ -193,30 +218,6 @@ impl<S> StatefulScrollState<S> {
     }
 }
 
-// State
-impl<S> StatefulScrollState<S> {
-    /// Provides read-only access to the inner scroll state.
-    ///
-    /// # Returns
-    /// A reference to `S`.
-    #[inline]
-    pub const fn state(&self) -> &S { &self.state }
-
-    /// Provides mutable access to the inner scroll state.
-    ///
-    /// # Returns
-    /// A mutable reference to `S`.
-    #[inline]
-    pub const fn state_mut(&mut self) -> &mut S { &mut self.state }
-
-    /// Returns the inner scroll state.
-    ///
-    /// # Returns
-    /// The inner `S`.
-    #[inline]
-    pub fn into_state(self) -> S { self.state }
-}
-
 
 
 
@@ -225,31 +226,50 @@ impl<S> StatefulScrollState<S> {
 /// The ScrollArea will render a stateful widget to a larger area, and then cut that area
 /// to a smaller one.
 ///
-/// This smaller area can then be scrolled using the [`StatefulScrollState`].
+/// This smaller area can then be scrolled using the [`ScrollState`].
 ///
 /// See the [`ScrollArea`] for non-stateful widgets.
 #[derive(Debug, Clone)]
-pub struct ScrollArea<'a, W> {
-    /// The nested widget that is rendered within the scrolled area.
-    widget: W,
+pub struct ScrollArea<'a, F> {
     /// A block to render around this area's contents.
-    block:  Option<Block<'a>>,
+    block: Option<Block<'a>>,
     /// The scrolled area, e.g., the size of the thing we're rendering (as a width x height pair).
-    inner:  (u16, u16),
+    inner: Rect,
+    /// The closure doing the rendering.
+    render_callback: F,
 }
-impl<'a, W> ScrollArea<'a, W> {
+impl<'a> ScrollArea<'a, ()> {
     /// Constructs a new ScrollArea.
     ///
     /// # Arguments
-    /// - `widget`: Some widget that will render to the _inner_ area. The scroll area takes care to
-    ///   project a window over that area that is equal to the ScrollArea's _outer_ area.
     /// - `inner`: The size of the scroll area's inner area (i.e., the size of the area the inner
     ///   widget renders to). Given as `(width x height)`.
     ///
     /// # Returns
     /// A new ScrollArea that can be rendered.
     #[inline]
-    pub const fn new(widget: W, inner: (u16, u16)) -> Self { Self { widget, block: None, inner } }
+    pub const fn new(inner: Rect) -> Self { Self { block: None, inner, render_callback: () } }
+}
+impl<'a, F> ScrollArea<'a, F> {
+    /// Exposes the internal buffer for rendering the inner area.
+    ///
+    /// The inner area will be sized as given when creating the ScrollArea. Note that whatever was
+    /// there first will be cleared upon a new call of this function.
+    ///
+    /// Also note that the rendering won't take place _immediately_, but rather when this
+    /// ScrollArea itself is being rendered.
+    ///
+    /// # Arguments
+    /// - `render_callback`: Some [`FnOnce`]-closure that takes something very much looking like a
+    ///   [`Frame`](ratatui::Frame) (but not really because we can't construct it) and allows you
+    ///   to render to the ScrollArea's inner area.
+    ///
+    /// # Returns
+    /// An identical ScrollArea that will render its inner contents according to `render_callback`.
+    #[inline]
+    pub fn render_inner<F2: for<'f> FnOnce(ScrollFrame<'f>)>(self, render_callback: F2) -> ScrollArea<'a, F2> {
+        ScrollArea { block: self.block, inner: self.inner, render_callback }
+    }
 
     /// Adds a block around this area.
     ///
@@ -259,9 +279,11 @@ impl<'a, W> ScrollArea<'a, W> {
     /// # Returns
     /// `Self` for chaining.
     #[inline]
-    pub fn block<'b>(mut self, block: Block<'b>) -> ScrollArea<'b, W> { ScrollArea { widget: self.widget, block: Some(block), inner: self.inner } }
+    pub fn block<'b>(mut self, block: Block<'b>) -> ScrollArea<'b, F> {
+        ScrollArea { block: Some(block), inner: self.inner, render_callback: self.render_callback }
+    }
 }
-impl<'a, W: Widget> StatefulWidget for ScrollArea<'a, W> {
+impl<'a, F: for<'f> FnOnce(ScrollFrame<'f>)> StatefulWidget for ScrollArea<'a, F> {
     type State = ScrollState;
 
     #[inline]
@@ -279,81 +301,18 @@ impl<'a, W: Widget> StatefulWidget for ScrollArea<'a, W> {
         };
 
         // Render the given widget to a buffer the size of the inner area first.
-        let inner: Rect = Rect::new(0, 0, self.inner.0, self.inner.1);
+        let inner: Rect = Rect::new(0, 0, self.inner.width, self.inner.height);
         state.cache.resize(inner);
         state.cache.reset();
-        self.widget.render(inner, &mut state.cache);
+        (self.render_callback)(ScrollFrame { buffer: &mut state.cache, area: inner });
 
-        // Run the math
-        scroll(state.pos, outer, inner, &state.cache, outer_buf);
-    }
-}
-
-
-
-/// The StatefulScrollArea will render a stateful widget to a larger area, and then cut that area
-/// to a smaller one.
-///
-/// This smaller area can then be scrolled using the [`StatefulScrollState`].
-///
-/// See the [`ScrollArea`] for non-stateful widgets.
-#[derive(Debug, Clone)]
-pub struct StatefulScrollArea<'a, W> {
-    /// The nested widget that is rendered within the scrolled area.
-    widget: W,
-    /// A block to render around this area's contents.
-    block:  Option<Block<'a>>,
-    /// The scrolled area, e.g., the size of the thing we're rendering (as a width x height pair).
-    inner:  (u16, u16),
-}
-impl<'a, W> StatefulScrollArea<'a, W> {
-    /// Constructs a new StatefulScrollArea.
-    ///
-    /// # Arguments
-    /// - `widget`: Some widget that will render to the _inner_ area. The scroll area takes care to
-    ///   project a window over that area that is equal to the StatefulScrollArea's _outer_ area.
-    /// - `inner`: The size of the scroll area's inner area (i.e., the size of the area the inner
-    ///   widget renders to). Given as `(width x height)`.
-    ///
-    /// # Returns
-    /// A new StatefulScrollArea that can be rendered.
-    #[inline]
-    pub const fn new(widget: W, inner: (u16, u16)) -> Self { Self { widget, block: None, inner } }
-
-    /// Adds a block around this area.
-    ///
-    /// # Arguments
-    /// - `block`: The block to add.
-    ///
-    /// # Returns
-    /// `Self` for chaining.
-    #[inline]
-    pub fn block<'b>(mut self, block: Block<'b>) -> StatefulScrollArea<'b, W> {
-        StatefulScrollArea { widget: self.widget, block: Some(block), inner: self.inner }
-    }
-}
-impl<'a, W: StatefulWidget> StatefulWidget for StatefulScrollArea<'a, W> {
-    type State = StatefulScrollState<W::State>;
-
-    #[inline]
-    fn render(self, outer: Rect, outer_buf: &mut Buffer, state: &mut Self::State) {
-        // Re-compute the outer if blocking
-        let outer = if let Some(block) = self.block {
-            // We can already render the block, why not
-            let inner_outer: Rect = block.inner(outer);
-            block.render(outer, outer_buf);
-
-            // Compute the rendering area for us
-            inner_outer
-        } else {
-            outer
-        };
-
-        // Render the given widget to a buffer the size of the inner area first.
-        let inner: Rect = Rect::new(0, 0, self.inner.0, self.inner.1);
-        state.cache.resize(inner);
-        state.cache.reset();
-        self.widget.render(inner, &mut state.cache, &mut state.state);
+        // Now bound the scroll state to not go beyond the inner frame
+        if state.pos.0 + outer.width > self.inner.width {
+            state.pos.0 = state.pos.0.saturating_sub((state.pos.0 + outer.width) - self.inner.width);
+        }
+        if state.pos.1 + outer.height > self.inner.height {
+            state.pos.1 = state.pos.1.saturating_sub((state.pos.1 + outer.height) - self.inner.height);
+        }
 
         // Run the math
         scroll(state.pos, outer, inner, &state.cache, outer_buf);

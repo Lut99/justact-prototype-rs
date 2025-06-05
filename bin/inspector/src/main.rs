@@ -118,8 +118,8 @@ async fn main() {
     // Now run the app
     debug!("Entering main game loop");
     if let Err(err) = App::new(what, handle).run().await {
-        error!("{}", err.trace());
         eprintln!("{}", String::from_utf8_lossy(&STDERR_BUF.0.lock()));
+        error!("{}", err.trace());
         std::process::exit(1);
     }
     eprintln!("{}", String::from_utf8_lossy(&STDERR_BUF.0.lock()));
