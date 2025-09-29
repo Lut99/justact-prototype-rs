@@ -18,7 +18,7 @@ use std::error;
 use std::task::Poll;
 
 use clap::Parser;
-use error_trace::trace;
+use error_trace::toplevel;
 use humanlog::{DebugMode, HumanLogger};
 use justact::actions::ConstructableAction;
 use justact::actors::{Agent, Synchronizer, View};
@@ -206,7 +206,7 @@ fn main() {
     // Run the runtime!
     let mut runtime = Runtime::new();
     if let Err(err) = runtime.run([Dan], Environment) {
-        error!("{}", trace!(("Failed to run runtime"), err));
+        error!("{}", toplevel!(("Failed to run runtime"), err));
         std::process::exit(1);
     }
 

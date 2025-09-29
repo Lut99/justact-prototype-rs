@@ -146,7 +146,7 @@ where
                                 }
                                 buf.push('}');
 
-                                // If we have parity, we have a (potential) trace!
+                                // If we have parity, we have a (potential) toplevel!
                                 if depth == 0 {
                                     debug!("Found raw trace: {buf:?}");
                                     match serde_json::from_str::<Event<'static>>(&buf) {

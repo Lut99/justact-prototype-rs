@@ -20,7 +20,7 @@ use std::ops::{Deref, DerefMut};
 use datalog::ast::{Atom, AtomArg, AtomArgs, Comma, Dot, Ident, Parens, Punctuated, Rule, Span, Spec, punct};
 use datalog::interpreter::interpretation::Interpretation;
 use datalog::parser::parse;
-use error_trace::trace;
+use error_trace::toplevel;
 use thiserror::Error;
 mod justact {
     pub use ::justact::auxillary::{Affectored, Identifiable};
@@ -35,9 +35,9 @@ mod justact {
 /// Defines errors that may occur when [extracting](Extractor::extract()) policy.
 #[derive(Debug, Error)]
 pub enum SyntaxError<'m> {
-    #[error("{}", trace!(("Failed to parse the input as valid Datalog"), err))]
+    #[error("{}", toplevel!(("Failed to parse the input as valid Datalog"), err))]
     Datalog { err: datalog::parser::Error<&'m str, &'m str> },
-    #[error("{}", trace!(("Failed to iterate over messages in {what}"), &**err))]
+    #[error("{}", toplevel!(("Failed to iterate over messages in {what}"), &**err))]
     Iter { what: &'static str, err: Box<dyn 'm + Error> },
 }
 
@@ -206,17 +206,17 @@ impl<'f, 's> Default for Policy<'f, 's> {
     fn default() -> Self {
         Self {
             pat:      Atom {
-                ident: Ident { value: Span::new("<Policy::default()>", "effect") },
+                ident: Ident { value: Span::new(("<Policy::default()>", "effect")) },
                 args:  Some(AtomArgs {
-                    paren_tokens: Parens { open: Span::new("<Policy::default()>", "("), close: Span::new("<Policy::default()>", ")") },
+                    paren_tokens: Parens { open: Span::new(("<Policy::default()>", "(")), close: Span::new(("<Policy::default()>", ")")) },
                     args: punct![
-                        v => AtomArg::Var(Ident { value: Span::new("<Policy::default()>", "A") }),
-                        p => Comma { span: Span::new("<Policy::default()>", ",") },
-                        v => AtomArg::Var(Ident { value: Span::new("<Policy::default()>", "E") })
+                        AtomArg::Var(Ident { value: Span::new(("<Policy::default()>", "A")) }),
+                        Comma { span: Span::new(("<Policy::default()>", ",")) },
+                        AtomArg::Var(Ident { value: Span::new(("<Policy::default()>", "E")) })
                     ],
                 }),
             },
-            affector: AtomArg::Var(Ident { value: Span::new("<Policy::default()>", "A") }),
+            affector: AtomArg::Var(Ident { value: Span::new(("<Policy::default()>", "A")) }),
             spec:     Spec { rules: Vec::new() },
         }
     }
@@ -265,7 +265,7 @@ impl<'f, 's> justact::Policy for Policy<'f, 's> {
     #[inline]
     fn is_valid(&self) -> bool {
         // Check whether error is true in the truths
-        let atom: Atom<&'static str, &'static str> = Atom { ident: Ident { value: Span::new("<datalog::Policy::truths>", "error") }, args: None };
+        let atom: Atom<&'static str, &'static str> = Atom { ident: Ident { value: Span::new(("<datalog::Policy::truths>", "error")) }, args: None };
         if let Some(value) = self.truths().truths.get(&atom) { value != &Some(true) } else { true }
     }
 
@@ -359,10 +359,10 @@ impl justact::Extractor<str, str, str> for Extractor {
         if add_error {
             // Build the list of consequents
             let mut consequents: Punctuated<Atom<&'m str, &'m str>, Comma<&'m str, &'m str>> = Punctuated::new();
-            consequents.push_first(Atom { ident: Ident { value: Span::new("<datalog::Extractor::extract>", "error") }, args: None });
+            consequents.push_first(Atom { ident: Ident { value: Span::new(("<datalog::Extractor::extract>", "error")) }, args: None });
 
             // Then add the rule
-            policy.spec.rules.push(Rule { consequents, tail: None, dot: Dot { span: Span::new("<datalog::Extractor::extract>", ".") } })
+            policy.spec.rules.push(Rule { consequents, tail: None, dot: Dot { span: Span::new(("<datalog::Extractor::extract>", ".")) } })
         }
 
         // OK, return the spec
@@ -394,20 +394,20 @@ mod tests {
     /// Generates the effect pattern.
     fn make_effect(actor: &'static str, effect: &'static str) -> Atom<&'static str, &'static str> {
         Atom {
-            ident: Ident { value: Span::new("<make_effect>", "effect") },
+            ident: Ident { value: Span::new(("<make_effect>", "effect")) },
             args:  Some(AtomArgs {
-                paren_tokens: Parens { open: Span::new("<make_effect>", "("), close: Span::new("<make_effect>", ")") },
+                paren_tokens: Parens { open: Span::new(("<make_effect>", "(")), close: Span::new(("<make_effect>", ")")) },
                 args: punct![
-                    v => if actor.chars().next().map(char::is_uppercase).unwrap_or(false) {
-                        AtomArg::Var(Ident { value: Span::new("<make_effect>", actor) })
+                    if actor.chars().next().map(char::is_uppercase).unwrap_or(false) {
+                        AtomArg::Var(Ident { value: Span::new(("<make_effect>", actor)) })
                     } else {
-                        AtomArg::Atom(Ident { value: Span::new("<make_effect>", actor) })
+                        AtomArg::Atom(Ident { value: Span::new(("<make_effect>", actor)) })
                     },
-                    p => Comma { span: Span::new("<make_effect>", ",") },
-                    v => if effect.chars().next().map(char::is_uppercase).unwrap_or(false) {
-                        AtomArg::Var(Ident { value: Span::new("<make_effect>", effect) })
+                    Comma { span: Span::new(("<make_effect>", ",")) },
+                    if effect.chars().next().map(char::is_uppercase).unwrap_or(false) {
+                        AtomArg::Var(Ident { value: Span::new(("<make_effect>", effect)) })
                     } else {
-                        AtomArg::Atom(Ident { value: Span::new("<make_effect>", effect) })
+                        AtomArg::Atom(Ident { value: Span::new(("<make_effect>", effect)) })
                     }
                 ],
             }),

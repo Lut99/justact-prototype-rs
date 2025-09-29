@@ -19,7 +19,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use crossterm::event::EventStream;
-use error_trace::trace;
+use error_trace::toplevel;
 use futures::{FutureExt as _, StreamExt as _};
 use justact::collections::Recipient;
 use justact::collections::map::InfallibleMap;
@@ -1342,7 +1342,7 @@ impl App {
                     let _ = sender.send(()).await;
                 },
                 Err(err) => {
-                    error!("{}", trace!(("Failed to read event from {what}"), err));
+                    error!("{}", toplevel!(("Failed to read event from {what}"), err));
 
                     // Add the event to the output
                     {

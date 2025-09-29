@@ -18,7 +18,7 @@ mod trace;
 
 use agents::{Agent, Amy, Consortium, Dan, Script, StAntonius, Surf};
 use clap::Parser;
-use error_trace::trace;
+use error_trace::toplevel;
 use humanlog::{DebugMode, HumanLogger};
 use justact::runtime::Runtime as _;
 use justact_prototype::dataplane::StoreHandle;
@@ -74,7 +74,7 @@ fn main() {
         match trace::FileEventHandler::new(&args.output) {
             Ok(handler) => justact_prototype::io::register_event_handler(handler),
             Err(err) => {
-                error!("{}", trace!(("Failed to create file {:?} to write events to", args.output), err));
+                error!("{}", toplevel!(("Failed to create file {:?} to write events to", args.output), err));
                 std::process::exit(1);
             },
         }
@@ -93,7 +93,7 @@ fn main() {
     // Run the runtime!
     let mut runtime = Runtime::new();
     if let Err(err) = runtime.run::<Agent>(agents, sync) {
-        error!("{}", trace!(("Failed to run runtime"), err));
+        error!("{}", toplevel!(("Failed to run runtime"), err));
         std::process::exit(1);
     }
 

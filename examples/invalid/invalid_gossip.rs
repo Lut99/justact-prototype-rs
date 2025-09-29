@@ -18,7 +18,7 @@ use std::error;
 use std::task::Poll;
 
 use clap::Parser;
-use error_trace::trace;
+use error_trace::toplevel;
 use humanlog::{DebugMode, HumanLogger};
 use justact::actions::ConstructableAction;
 use justact::actors::{Agent, Synchronizer, View};
@@ -126,7 +126,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Gossiper {
                 "bob" => {
                     if let Some(msg) = view.stated.get(&("amy".into(), 1)).unwrap() {
                         if let Err(err) = view.stated.add(Recipient::One("cho"), msg.clone()) {
-                            error!("{}", trace!(("Bob failed to send Amy's message"), err));
+                            error!("{}", toplevel!(("Bob failed to send Amy's message"), err));
                         }
                         Ok(Poll::Ready(()))
                     } else {
@@ -149,7 +149,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Gossiper {
             Behaviour::Malicious => {
                 // Dan attempts to send Amy's message - but he never gets to see it!
                 if let Err(err) = view.stated.add(Recipient::All, SM::new((String::new(), 1), "amy".into(), "hello bob me lad how r u.".into())) {
-                    error!("{}", trace!(("Dan failed to send Amy's message"), err));
+                    error!("{}", toplevel!(("Dan failed to send Amy's message"), err));
                 }
                 Ok(Poll::Ready(()))
             },
@@ -210,7 +210,7 @@ fn main() {
     // Run the runtime!
     let mut runtime = Runtime::new();
     if let Err(err) = runtime.run::<Gossiper>(agents, Environment) {
-        error!("{}", trace!(("Failed to run runtime"), err));
+        error!("{}", toplevel!(("Failed to run runtime"), err));
         std::process::exit(1);
     }
 

@@ -20,7 +20,7 @@ use std::io::{Result as IResult, Write};
 
 use app::App;
 use clap::Parser;
-use error_trace::{ErrorTrace as _, trace};
+use error_trace::{ErrorTrace as _, toplevel};
 use humanlog::{ColourChoice, DebugMode, HumanLogger, LogWriter};
 use log::{Level, debug, error, info};
 use parking_lot::lock_api::RawMutex as _;
@@ -108,7 +108,7 @@ async fn main() {
         (format!("{:?}", args.path), match File::open(&args.path).await {
             Ok(handle) => Box::new(handle),
             Err(err) => {
-                error!("{}", trace!(("Failed to open input trace file {:?}", args.path), err));
+                error!("{}", toplevel!(("Failed to open input trace file {:?}", args.path), err));
                 eprintln!("{}", String::from_utf8_lossy(&STDERR_BUF.0.lock()));
                 std::process::exit(1);
             },
