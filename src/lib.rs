@@ -24,4 +24,5 @@ pub mod sets;
 pub mod wire;
 
 // Use some of it
+pub use justact as spec;
 pub use runtime::{Error, Runtime};
