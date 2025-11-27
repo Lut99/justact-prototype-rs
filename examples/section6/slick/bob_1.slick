@@ -17,8 +17,8 @@
 
 error if (bob Name1) ready and not (bob Name1) executed and (bob Name2) executed.
 
-authorise Task in Msg by Worker
-    if Worker says (Task executed) and (Task ready) within Msg.
-    
+authorise read of Variable for Task by Worker
+    if Worker says (Task executed) and (Task ready) and Task has input Variable.
+
 (bob step1) executed.
 (bob step4) executed.

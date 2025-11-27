@@ -4,4 +4,4 @@
 st-antonius controls ((st-antonius patients-2024) patients).
 
 (st-antonius patients-2024) executed.
-authorise (st-antonius patients-2024) in (st-antonius 1) by st-antonius.
+// Note: no auth required, no read

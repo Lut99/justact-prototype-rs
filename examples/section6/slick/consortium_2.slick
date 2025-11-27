@@ -1,8 +1,5 @@
 // Statement ( consortium 1) ...
 error if error _.
-error (illegal (Fact within Msg1) within Msg2) if (Fact within Msg1) within Msg2.
-error (illegal (actor Agent) within Msg2) if (actor Agent) within Msg2.
-Sayer says Fact if Fact within (Sayer M) and diff { (consortium 1) (Sayer M) }.
 error (illegal (Sayer says (Agent says Fact))) if Sayer says (Agent says Fact).
 
 // ... continuing statement ( consortium 1) ...
@@ -23,15 +20,14 @@ error (illegal (Worker reads Variable) said by non consortium Sayer) if Sayer sa
 error (illegal (Worker writes Variable) said by non consortium Sayer) if Sayer says (Worker writes Variable).
 
 // ... completing statement ( consortium 1).
-error (illegal execution of Task without Checker authorisation) if Worker says (Task executed) and (Task has input Variable) within Msg
-                                                                and Task involves Checker and not Checker says ( authorise Task in Msg by Worker ).
+error (illegal read by Worker of Variable for Task without Checker authorisation) if Worker reads Variable for Task
+                                                                                      and Task involves Checker
+                                                                                      and not Checker says ( authorise read of Variable for Task by Worker ).
+
 // The updated rules!
 Task involves Agent if Agent controls (Task Label)
                     and not Agent says ((Task Label) is insensitive).
 Task2 involves Agent if Task has input (Task1 Label) and Task1 involves Agent
-                     and not Agent says ((Task Label) is insensitive).
-error (authorised Task with input Variable in another message) if authorise Task in Msg1 by Worker
-                                                               and ( Task has input Variable ) within Msg2 and diff { Msg1 Msg2 }.
 
 // The new rule!
 (surf utils) involves surf.

@@ -1,15 +1,12 @@
 // Statement ( consortium 1) ...
 error if error _.
-error (illegal (Fact within Msg1) within Msg2) if (Fact within Msg1) within Msg2.
-error (illegal (actor Agent) within Msg2) if (actor Agent) within Msg2.
-Sayer says Fact if Fact within (Sayer M) and diff { (consortium 1) (Sayer M) }.
 error (illegal (Sayer says (Agent says Fact))) if Sayer says (Agent says Fact).
 
 // ... continuing statement ( consortium 1) ...
 Sayer drives Task if Sayer says (Task ready).
 Sayer drives Task if Sayer says (Task has input Variable).
 Sayer drives Task if Sayer says (Task has output Label).
-error (illegal (Agent drives Task) by Sayer) if Sayer says (Agent drives Task).
+error (illegal (Agent drives Task) by Sayer) if Sayer says (Agent drives Task) and diff { Sayer consortium }.
 error (illegal (Agent drives (Driver Name)) because Agent aint Driver) if Agent drives (Driver Name) and diff { Agent Driver }.
 
 // ... continuing statement ( consortium 1) .
@@ -17,15 +14,12 @@ error (illegal (Task executed) when Task aint ready) if Task executed and not Ta
 error (illegal (Task2 executed) when input (Task1 Label) aint executed yet) if Task2 executed and Task2 has input (Task1 Label) and not Task1 executed.
 
 // ... continuing statement ( consortium 1) ...
-Worker reads Variable if Task has input Variable and actor Worker and Worker says (Task executed).
-Worker writes (Task Label) if Task has output Label and actor Worker and Worker says (Task executed).
-error (illegal (Worker reads Variable) said by non consortium Sayer) if Sayer says (Worker reads Variable).
-error (illegal (Worker writes Variable) said by non consortium Sayer) if Sayer says (Worker writes Variable).
+Worker reads Variable for Task if Task has input Variable and actor Worker and Worker says (Task executed).
+error (illegal (Worker reads Variable for Task) said by non consortium Sayer) if Sayer says (Worker reads Variable for Task) and diff { consortium Sayer }.
 
 // ... completing statement ( consortium 1).
-error (illegal execution of Task without Checker authorisation) if Worker says (Task executed) and (Task has input Variable) within Msg
-                                                                and Task involves Checker and not Checker says ( authorise Task in Msg by Worker ).
+error (illegal read by Worker of Variable for Task without Checker authorisation) if Worker reads Variable for Task
+                                                                                      and Task involves Checker
+                                                                                      and not Checker says ( authorise read of Variable for Task by Worker ).
 Task involves Checker if Checker controls ( Task Label ).
-Task2 involves Checker if Task2 has input ( Task1 Label ) and Task1 involves Checker .
-error (authorised Task with input Variable in another message) if authorise Task in Msg1 by Worker
-                                                               and ( Task has input Variable ) within Msg2 and diff { Msg1 Msg2 }.
+Task2 involves Checker if Task2 has input ( Task1 Label ) and Task1 involves Checker.
