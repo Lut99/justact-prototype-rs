@@ -505,22 +505,19 @@ impl justact::Extractor<(String, u32), str, str> for Extractor {
             //     }
             // }
 
-            // Generate additional `within`-facts
-            let mut within: Vec<Rule> = Vec::with_capacity(msg_prog.rules.len());
-            for rule in &msg_prog.rules {
+            // Generate additional `says`-heads
+            for rule in &mut msg_prog.rules {
+                let mut additional_cons = Vec::with_capacity(rule.consequents.len());
                 for cons in &rule.consequents {
-                    let msg_id: &(String, u32) = msg.id();
-                    within.push(Rule {
-                        consequents: vec![Atom::Tuple(vec![
-                            cons.clone(),
-                            Atom::Constant(Text::from_str("within")),
-                            Atom::Tuple(vec![Atom::Constant(Text::from_str(&msg_id.0)), Atom::Constant(Text::from_str(&msg_id.1.to_string()))]),
-                        ])],
-                        rule_body:   RuleBody { pos_antecedents: vec![cons.clone()], neg_antecedents: Vec::new(), checks: Vec::new() },
-                    });
+                    let author: &str = msg.author_id();
+                    additional_cons.push(Atom::Tuple(vec![
+                        Atom::Constant(Text::from_str(author)),
+                        Atom::Constant(Text::from_str("says")),
+                        cons.clone(),
+                    ]));
                 }
+                rule.consequents.extend(additional_cons);
             }
-            msg_prog.rules.extend(within);
 
             // OK, now we can add all the rules together
             policy.program.rules.extend(msg_prog.rules);
@@ -616,33 +613,31 @@ mod tests {
         assert_eq!(pol.program, Program {
             rules: vec![
                 Rule {
-                    consequents: vec![Atom::Constant(Text::from_str("foo"))],
+                    consequents: vec![
+                        Atom::Constant(Text::from_str("foo")),
+                        Atom::Tuple(vec![
+                            Atom::Constant(Text::from_str("amy")),
+                            Atom::Constant(Text::from_str("says")),
+                            Atom::Constant(Text::from_str("foo"))
+                        ])
+                    ],
                     rule_body:   RuleBody { pos_antecedents: vec![], neg_antecedents: vec![], checks: vec![] },
                 },
                 Rule {
-                    consequents: vec![Atom::Constant(Text::from_str("bar"))],
+                    consequents: vec![
+                        Atom::Constant(Text::from_str("bar")),
+                        Atom::Tuple(vec![
+                            Atom::Constant(Text::from_str("amy")),
+                            Atom::Constant(Text::from_str("says")),
+                            Atom::Constant(Text::from_str("bar"))
+                        ])
+                    ],
                     rule_body:   RuleBody {
                         pos_antecedents: vec![Atom::Tuple(vec![Atom::Constant(Text::from_str("baz")), Atom::Variable(Text::from_str("A"))])],
                         neg_antecedents: vec![],
                         checks: vec![],
                     },
                 },
-                Rule {
-                    consequents: vec![Atom::Tuple(vec![
-                        Atom::Constant(Text::from_str("foo")),
-                        Atom::Constant(Text::from_str("within")),
-                        Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("1"))])
-                    ])],
-                    rule_body:   RuleBody { pos_antecedents: vec![Atom::Constant(Text::from_str("foo"))], neg_antecedents: vec![], checks: vec![] },
-                },
-                Rule {
-                    consequents: vec![Atom::Tuple(vec![
-                        Atom::Constant(Text::from_str("bar")),
-                        Atom::Constant(Text::from_str("within")),
-                        Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("1"))])
-                    ])],
-                    rule_body:   RuleBody { pos_antecedents: vec![Atom::Constant(Text::from_str("bar"))], neg_antecedents: vec![], checks: vec![] },
-                }
             ],
         });
     }
@@ -654,95 +649,41 @@ mod tests {
         let msgs = justact::MessageSet::from([msg1, msg2]);
 
         // Extract the policy from it
-        let pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &msgs).unwrap();
+        let mut pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &msgs).unwrap();
         // NOTE: MessageSet collects messages unordered, so the rules may be in any order
-        assert!(
-            pol.program
-                == Program {
-                    rules: vec![
-                        Rule {
-                            consequents: vec![Atom::Constant(Text::from_str("foo"))],
-                            rule_body:   RuleBody { pos_antecedents: vec![], neg_antecedents: vec![], checks: vec![] },
-                        },
-                        Rule {
-                            consequents: vec![Atom::Tuple(vec![
-                                Atom::Constant(Text::from_str("foo")),
-                                Atom::Constant(Text::from_str("within")),
-                                Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("1"))])
-                            ])],
-                            rule_body:   RuleBody {
-                                pos_antecedents: vec![Atom::Constant(Text::from_str("foo"))],
-                                neg_antecedents: vec![],
-                                checks: vec![],
-                            },
-                        },
-                        Rule {
-                            consequents: vec![Atom::Constant(Text::from_str("bar"))],
-                            rule_body:   RuleBody {
-                                pos_antecedents: vec![Atom::Tuple(vec![Atom::Constant(Text::from_str("baz")), Atom::Variable(Text::from_str("A"))])],
-                                neg_antecedents: vec![],
-                                checks: vec![],
-                            },
-                        },
-                        Rule {
-                            consequents: vec![Atom::Tuple(vec![
-                                Atom::Constant(Text::from_str("bar")),
-                                Atom::Constant(Text::from_str("within")),
-                                Atom::Tuple(vec![Atom::Constant(Text::from_str("bob")), Atom::Constant(Text::from_str("1"))])
-                            ])],
-                            rule_body:   RuleBody {
-                                pos_antecedents: vec![Atom::Constant(Text::from_str("bar"))],
-                                neg_antecedents: vec![],
-                                checks: vec![],
-                            },
-                        },
+        // For consistency, we ensure they aren't.
+        pol.rules.sort_by(|lhs, rhs| lhs.consequents.cmp(&rhs.consequents));
+
+        assert_eq!(pol.program, Program {
+            rules: vec![
+                Rule {
+                    consequents: vec![
+                        Atom::Constant(Text::from_str("foo")),
+                        Atom::Tuple(vec![
+                            Atom::Constant(Text::from_str("amy")),
+                            Atom::Constant(Text::from_str("says")),
+                            Atom::Constant(Text::from_str("foo"))
+                        ])
                     ],
-                }
-                || pol.program
-                    == Program {
-                        rules: vec![
-                            Rule {
-                                consequents: vec![Atom::Constant(Text::from_str("bar"))],
-                                rule_body:   RuleBody {
-                                    pos_antecedents: vec![Atom::Tuple(vec![
-                                        Atom::Constant(Text::from_str("baz")),
-                                        Atom::Variable(Text::from_str("A"))
-                                    ])],
-                                    neg_antecedents: vec![],
-                                    checks: vec![],
-                                },
-                            },
-                            Rule {
-                                consequents: vec![Atom::Tuple(vec![
-                                    Atom::Constant(Text::from_str("bar")),
-                                    Atom::Constant(Text::from_str("within")),
-                                    Atom::Tuple(vec![Atom::Constant(Text::from_str("bob")), Atom::Constant(Text::from_str("1"))])
-                                ])],
-                                rule_body:   RuleBody {
-                                    pos_antecedents: vec![Atom::Constant(Text::from_str("bar"))],
-                                    neg_antecedents: vec![],
-                                    checks: vec![],
-                                },
-                            },
-                            Rule {
-                                consequents: vec![Atom::Constant(Text::from_str("foo"))],
-                                rule_body:   RuleBody { pos_antecedents: vec![], neg_antecedents: vec![], checks: vec![] },
-                            },
-                            Rule {
-                                consequents: vec![Atom::Tuple(vec![
-                                    Atom::Constant(Text::from_str("foo")),
-                                    Atom::Constant(Text::from_str("within")),
-                                    Atom::Tuple(vec![Atom::Constant(Text::from_str("amy")), Atom::Constant(Text::from_str("1"))])
-                                ])],
-                                rule_body:   RuleBody {
-                                    pos_antecedents: vec![Atom::Constant(Text::from_str("foo"))],
-                                    neg_antecedents: vec![],
-                                    checks: vec![],
-                                },
-                            },
-                        ],
-                    }
-        );
+                    rule_body:   RuleBody { pos_antecedents: vec![], neg_antecedents: vec![], checks: vec![] },
+                },
+                Rule {
+                    consequents: vec![
+                        Atom::Constant(Text::from_str("bar")),
+                        Atom::Tuple(vec![
+                            Atom::Constant(Text::from_str("bob")),
+                            Atom::Constant(Text::from_str("says")),
+                            Atom::Constant(Text::from_str("bar"))
+                        ])
+                    ],
+                    rule_body:   RuleBody {
+                        pos_antecedents: vec![Atom::Tuple(vec![Atom::Constant(Text::from_str("baz")), Atom::Variable(Text::from_str("A"))])],
+                        neg_antecedents: vec![],
+                        checks: vec![],
+                    },
+                },
+            ],
+        });
     }
 
     #[test]
@@ -895,10 +836,10 @@ mod tests {
                 make_flat_ground_atom_str("bar foo"),
                 make_flat_ground_atom_str("baz foo"),
                 make_flat_ground_atom_str("qux foo"),
-                make_flat_ground_atom_str("foo within (amy 1)"),
-                make_flat_ground_atom_str("(bar foo) within (amy 1)"),
-                make_flat_ground_atom_str("(baz foo) within (amy 1)"),
-                make_flat_ground_atom_str("(qux foo) within (bob 1)"),
+                make_flat_ground_atom_str("amy says foo"),
+                make_flat_ground_atom_str("amy says (bar foo)"),
+                make_flat_ground_atom_str("amy says (baz foo)"),
+                make_flat_ground_atom_str("bob says (qux foo)"),
             ]
             .into_iter()
             .map(|a| (a.clone(), Some(true)))
