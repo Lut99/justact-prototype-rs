@@ -17,9 +17,9 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::ops::{Deref, DerefMut};
 
-use datalog::ast::{Atom, AtomArg, AtomArgs, Comma, Dot, Ident, Parens, Punctuated, Rule, Span, Spec, punct};
-use datalog::interpreter::interpretation::Interpretation;
+use datalog::interpreter::KnowledgeBase;
 use datalog::parser::parse;
+use datalog::{ast, ir};
 use error_trace::toplevel;
 use thiserror::Error;
 mod justact {
@@ -36,7 +36,7 @@ mod justact {
 #[derive(Debug, Error)]
 pub enum SyntaxError<'m> {
     #[error("{}", toplevel!(("Failed to parse the input as valid Datalog"), err))]
-    Datalog { err: datalog::parser::Error<&'m str, &'m str> },
+    Datalog { err: datalog::parser::Error<'m, (&'m str, &'m str)> },
     #[error("{}", toplevel!(("Failed to iterate over messages in {what}"), &**err))]
     Iter { what: &'static str, err: Box<dyn 'm + Error> },
 }
@@ -50,24 +50,24 @@ pub enum SyntaxError<'m> {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Effect<'f, 's> {
     /// The truth wrapped by this effect.
-    pub fact:     Atom<&'f str, &'s str>,
+    pub fact:     ir::GroundAtom<(&'f str, &'s str)>,
     /// The identifier of the affector.
-    pub affector: Ident<&'f str, &'s str>,
+    pub affector: ir::Ident<(&'f str, &'s str)>,
 }
 impl<'f, 's> justact::Affectored for Effect<'f, 's> {
-    type AffectorId = Ident<&'f str, &'s str>;
+    type AffectorId = ir::Ident<(&'f str, &'s str)>;
 
     #[inline]
     fn affector_id(&self) -> &Self::AffectorId { &self.affector }
 }
 impl<'f, 's> justact::Effect for Effect<'f, 's> {
-    type Fact = Atom<&'f str, &'s str>;
+    type Fact = ir::GroundAtom<(&'f str, &'s str)>;
 
     #[inline]
     fn fact(&self) -> &Self::Fact { &self.fact }
 }
 impl<'f, 's> justact::Identifiable for Effect<'f, 's> {
-    type Id = Atom<&'f str, &'s str>;
+    type Id = ir::GroundAtom<(&'f str, &'s str)>;
 
     #[inline]
     fn id(&self) -> &Self::Id { &self.fact }
@@ -77,9 +77,9 @@ impl<'f, 's> justact::Identifiable for Effect<'f, 's> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Denotation<'f, 's> {
     /// A set of hard truths (including the effects, naively).
-    truths:  HashMap<Atom<&'f str, &'s str>, Option<bool>>,
+    truths:  HashMap<ir::GroundAtom<(&'f str, &'s str)>, Option<bool>>,
     /// An additional set of effects extracted from the `int`erpretation.
-    effects: HashMap<Atom<&'f str, &'s str>, Effect<'f, 's>>,
+    effects: HashMap<ir::GroundAtom<(&'f str, &'s str)>, Effect<'f, 's>>,
 }
 impl<'f, 's> Default for Denotation<'f, 's> {
     #[inline]
@@ -90,55 +90,60 @@ impl<'f, 's> Denotation<'f, 's> {
     ///
     /// # Arguments
     /// - `int`: The [`Interpretation`] to build this Denotation from.
-    /// - `pat`: An [`Atom`] that describes a pattern for recognizing effets.
-    /// - `affector`: An [`AtomArg`] that describes how to extract the affector from the effect.
+    /// - `pat`: An [`Atom`] that describes a pattern for recognizing effects.
+    /// - `affector`: An [`Atom`] that describes how to extract the affector from the effect.
     ///
     /// # Returns
     /// A new Denotation that is JustAct^{TM} compliant.
     #[inline]
-    pub fn from_interpretation(int: Interpretation<'f, 's>, pat: Atom<&'f str, &'s str>, affector: AtomArg<&'f str, &'s str>) -> Self {
-        let mut truths: HashMap<Atom<&'f str, &'s str>, Option<bool>> = HashMap::new();
-        let mut effects: HashMap<Atom<&'f str, &'s str>, Effect<'f, 's>> = HashMap::new();
-        for (fact, value) in int.into_iter() {
-            // See if the fact matches the pattern
-            if pat.ident == fact.ident
-                && pat.args.as_ref().map(|a| a.args.len()).unwrap_or(0) == fact.args.as_ref().map(|a| a.args.len()).unwrap_or(0)
-            {
-                // The identifier and arity matches; check if every non-variable argument in the pattern matches the fact
-                let mut is_effect: bool = true;
-                for (fact_arg, pat_arg) in pat.args.iter().flat_map(|a| a.args.values()).zip(fact.args.iter().flat_map(|a| a.args.values())) {
-                    if matches!(pat_arg, AtomArg::Atom(_)) && pat_arg == fact_arg {
-                        // It's not an effect :(
-                        is_effect = false;
-                        break;
-                    }
-                }
-                // Insert it if the argument of the pattern matched
-                if is_effect {
-                    // Extract the affector
-                    let affector: &Ident<&'f str, &'s str> = match &affector {
-                        // If it's an atom, just return that
-                        AtomArg::Atom(a) => a,
-                        // If it's a variable, find it in the effect
-                        AtomArg::Var(v) => {
-                            match pat.args.iter().flat_map(|a| a.args.values()).zip(fact.args.iter().flat_map(|a| a.args.values())).find_map(
-                                |(pat_arg, fact_arg)| {
-                                    if let AtomArg::Var(arg) = pat_arg { if arg == v { Some(fact_arg.ident()) } else { None } } else { None }
-                                },
-                            ) {
-                                Some(ident) => ident,
-                                None => panic!("Did not find affector variable {:?} in effect {:?}", v.value.value(), fact),
+    pub fn from_interpretation(
+        int: KnowledgeBase<(&'f str, &'s str)>,
+        pat: ir::Atom<(&'f str, &'s str)>,
+        affector: ir::Ident<(&'f str, &'s str)>,
+    ) -> Self {
+        fn matched_by<S: Clone>(atom: &ir::GroundAtom<S>, pat: &ir::Atom<S>, affector: &ir::Ident<S>) -> Option<ir::Ident<S>> {
+            match pat {
+                // Check if arity matches
+                ir::Atom::Fact(ir::Fact { ident, args }) if &atom.ident == ident && atom.args.len() == args.len() => {
+                    // Check if the pattern checks out
+                    let mut res: Option<ir::Ident<S>> = None;
+                    for (atom, pat) in atom.args.iter().zip(args.iter()) {
+                        if let Some(aff) = matched_by(atom, pat, affector) {
+                            if res.is_none() {
+                                res = Some(aff);
+                            } else {
+                                panic!("Duplicate affector!");
                             }
-                        },
-                    };
+                        }
+                    }
+                    res
+                },
+                ir::Atom::Fact(_) => None,
 
-                    // Insert it!
-                    effects.insert(fact.clone(), Effect { fact: fact.clone(), affector: affector.clone() });
-                }
+                // Variables always match, but not necessarily the affector
+                ir::Atom::Var(var) if var == affector => {
+                    // We can only do something if the fact is an ident
+                    if !atom.args.is_empty() {
+                        panic!("Can only match affector with identifier, not nested thing!");
+                    }
+                    Some(atom.ident.clone())
+                },
+                ir::Atom::Var(_) => None,
+            }
+        }
+
+
+        let mut truths: HashMap<ir::GroundAtom<(&'f str, &'s str)>, Option<bool>> = HashMap::new();
+        let mut effects: HashMap<ir::GroundAtom<(&'f str, &'s str)>, Effect<'f, 's>> = HashMap::new();
+        for fact in int.truths() {
+            // See if the fact matches the pattern
+            if let Some(affector) = matched_by(&fact, &pat, &affector) {
+                // Insert it!
+                effects.insert(fact.clone(), Effect { fact: fact.clone(), affector });
             }
 
             // Always add the truth as such
-            truths.insert(fact, value);
+            truths.insert(fact.clone(), Some(true));
         }
 
         // OK, return the denotation!
@@ -147,7 +152,7 @@ impl<'f, 's> Denotation<'f, 's> {
 }
 impl<'f, 's> justact::Denotation for Denotation<'f, 's> {
     type Effect = Effect<'f, 's>;
-    type Fact = Atom<&'f str, &'s str>;
+    type Fact = ir::GroundAtom<(&'f str, &'s str)>;
 
     #[inline]
     fn truth_of(&self, fact: &Self::Fact) -> Option<bool> { self.truths.get(fact).cloned().unwrap_or(Some(false)) }
@@ -169,18 +174,18 @@ impl<'f, 's> justact::Map<Effect<'f, 's>> for Denotation<'f, 's> {
     #[inline]
     fn len(&self) -> Result<usize, Self::Error> { Ok(self.effects.len()) }
 }
-impl<'f, 's> justact::Set<Atom<&'f str, &'s str>> for Denotation<'f, 's> {
+impl<'f, 's> justact::Set<ir::GroundAtom<(&'f str, &'s str)>> for Denotation<'f, 's> {
     type Error = Infallible;
 
     #[inline]
-    fn get(&self, elem: &Atom<&'f str, &'s str>) -> Result<Option<&Atom<&'f str, &'s str>>, Self::Error> {
+    fn get(&self, elem: &ir::GroundAtom<(&'f str, &'s str)>) -> Result<Option<&ir::GroundAtom<(&'f str, &'s str)>>, Self::Error> {
         Ok(self.truths.get_key_value(elem).map(|(k, _)| k))
     }
 
     #[inline]
-    fn iter<'a>(&'a self) -> Result<impl Iterator<Item = &'a Atom<&'f str, &'s str>>, Self::Error>
+    fn iter<'a>(&'a self) -> Result<impl Iterator<Item = &'a ir::GroundAtom<(&'f str, &'s str)>>, Self::Error>
     where
-        Atom<&'f str, &'s str>: 'a,
+        ir::GroundAtom<(&'f str, &'s str)>: 'a,
     {
         Ok(self.truths.keys())
     }
@@ -195,29 +200,22 @@ impl<'f, 's> justact::Set<Atom<&'f str, &'s str>> for Denotation<'f, 's> {
 #[derive(Clone, Debug)]
 pub struct Policy<'f, 's> {
     /// The pattern to match effects.
-    pat:      Atom<&'f str, &'s str>,
+    pat:      ir::Atom<(&'f str, &'s str)>,
     /// How to find the affector from effects.
-    affector: AtomArg<&'f str, &'s str>,
+    affector: ir::Ident<(&'f str, &'s str)>,
     /// The spec we wrap with actual policy.
-    spec:     Spec<&'f str, &'s str>,
+    spec:     ir::Spec<ir::Atom<(&'f str, &'s str)>>,
 }
 impl<'f, 's> Default for Policy<'f, 's> {
     #[inline]
     fn default() -> Self {
         Self {
-            pat:      Atom {
-                ident: Ident { value: Span::new(("<Policy::default()>", "effect")) },
-                args:  Some(AtomArgs {
-                    paren_tokens: Parens { open: Span::new(("<Policy::default()>", "(")), close: Span::new(("<Policy::default()>", ")")) },
-                    args: punct![
-                        AtomArg::Var(Ident { value: Span::new(("<Policy::default()>", "A")) }),
-                        Comma { span: Span::new(("<Policy::default()>", ",")) },
-                        AtomArg::Var(Ident { value: Span::new(("<Policy::default()>", "E")) })
-                    ],
-                }),
-            },
-            affector: AtomArg::Var(Ident { value: Span::new(("<Policy::default()>", "A")) }),
-            spec:     Spec { rules: Vec::new() },
+            pat:      ir::Atom::Fact(ir::Fact {
+                ident: ir::Ident::new("effect".into(), None),
+                args:  vec![ir::Atom::Var(ir::Ident::new("A".into(), None)), ir::Atom::Var(ir::Ident::new("E".into(), None))],
+            }),
+            affector: ir::Ident::new("A".into(), None),
+            spec:     ir::Spec { rules: Vec::new() },
         }
     }
 }
@@ -234,7 +232,7 @@ impl<'f, 's> Policy<'f, 's> {
     /// - `pat`: The pattern used to match effects.
     /// - `affector`: What affector to provide for effects.
     #[inline]
-    pub fn update_effect_pattern(&mut self, pat: Atom<&'f str, &'s str>, affector: AtomArg<&'f str, &'s str>) {
+    pub fn update_effect_pattern(&mut self, pat: ir::Atom<(&'f str, &'s str)>, affector: ir::Ident<(&'f str, &'s str)>) {
         self.pat = pat;
         self.affector = affector;
     }
@@ -244,19 +242,19 @@ impl<'f, 's> Policy<'f, 's> {
     /// # Returns
     /// A reference to the internal [`Spec`].
     #[inline]
-    pub fn spec(&self) -> &Spec<&'f str, &'s str> { &self.spec }
+    pub fn spec(&self) -> &ir::Spec<ir::Atom<(&'f str, &'s str)>> { &self.spec }
     /// Returns the specification mutably.
     ///
     /// # Returns
     /// A mutable reference to the internal [`Spec`].
     #[inline]
-    pub fn spec_mut(&mut self) -> &mut Spec<&'f str, &'s str> { &mut self.spec }
+    pub fn spec_mut(&mut self) -> &mut ir::Spec<ir::Atom<(&'f str, &'s str)>> { &mut self.spec }
     /// Returns the specification by consuming this Policy.
     ///
     /// # Returns
     /// The internal [`Spec`].
     #[inline]
-    pub fn into_spec(self) -> Spec<&'f str, &'s str> { self.spec }
+    pub fn into_spec(self) -> ir::Spec<ir::Atom<(&'f str, &'s str)>> { self.spec }
 }
 impl<'f, 's> justact::Policy for Policy<'f, 's> {
     type Denotation = Denotation<'f, 's>;
@@ -265,7 +263,7 @@ impl<'f, 's> justact::Policy for Policy<'f, 's> {
     #[inline]
     fn is_valid(&self) -> bool {
         // Check whether error is true in the truths
-        let atom: Atom<&'static str, &'static str> = Atom { ident: Ident { value: Span::new(("<datalog::Policy::truths>", "error")) }, args: None };
+        let atom: ir::GroundAtom<(&'static str, &'static str)> = ir::GroundAtom { ident: ir::Ident::new("error".into(), None), args: Vec::new() };
         if let Some(value) = self.truths().truths.get(&atom) { value != &Some(true) } else { true }
     }
 
@@ -286,7 +284,7 @@ impl<'f, 's> justact::Policy for Policy<'f, 's> {
     fn compose_mut(&mut self, other: Self) { self.spec.rules.extend(other.spec.rules); }
 }
 impl<'f, 's> Deref for Policy<'f, 's> {
-    type Target = Spec<&'f str, &'s str>;
+    type Target = ir::Spec<ir::Atom<(&'f str, &'s str)>>;
     #[inline]
     fn deref(&self) -> &Self::Target { &self.spec }
 }
@@ -321,7 +319,7 @@ impl justact::Extractor<str, str, str> for Extractor {
             let snippet: &str = msg.payload();
 
             // Parse as Datalog
-            let msg_spec: Spec<&'m str, &'m str> = match parse(msg.id(), snippet) {
+            let msg_spec: ast::Spec<(&'m str, &'m str)> = match parse((msg.id(), snippet)) {
                 Ok(spec) => spec,
                 Err(err) => return Err(SyntaxError::Datalog { err }),
             };
@@ -330,16 +328,31 @@ impl justact::Extractor<str, str, str> for Extractor {
             if !add_error {
                 'rules: for rule in &msg_spec.rules {
                     for cons in rule.consequents.values() {
+                        let ast::Atom::Fact(cons) = cons else { continue };
+
                         // If a consequent begins with 'ctl-'...
-                        if cons.ident.value.value().starts_with("ctl-") || cons.ident.value.value().starts_with("ctl_") {
+                        if cons.ident.value.starts_with("ctl-") || cons.ident.value.starts_with("ctl_") {
                             // ...and its first argument is _not_ the author of the message...
                             if let Some(arg) = cons.args.iter().flat_map(|a| a.args.values().next()).next() {
-                                if arg.ident().value.value() == msg.author_id() {
-                                    continue;
-                                } else {
-                                    // ...then we derive error (it is not the author)
-                                    add_error = true;
-                                    break 'rules;
+                                match arg {
+                                    ast::Atom::Fact(f) => {
+                                        if f.args.as_ref().map(|a| a.args.len()).unwrap_or(0) == 0 {
+                                            if f.ident.value != msg.author_id() {
+                                                // ...then we derive error (it is not the author)
+                                                add_error = true;
+                                                break 'rules;
+                                            }
+                                        } else {
+                                            // ...then we derive error (it is not flat)
+                                            add_error = true;
+                                            break 'rules;
+                                        }
+                                    },
+                                    ast::Atom::Var(_) => {
+                                        // ...then we derive error (it is a variable)
+                                        add_error = true;
+                                        break 'rules;
+                                    },
                                 }
                             } else {
                                 // ...then we derive error (there are no arguments)
@@ -352,17 +365,31 @@ impl justact::Extractor<str, str, str> for Extractor {
             }
 
             // OK, now we can add all the rules together
-            policy.spec.rules.extend(msg_spec.rules);
+            policy.spec.rules.reserve(msg_spec.rules.len());
+            for rule in msg_spec.rules {
+                // Attempt to compile it
+                match rule.compile() {
+                    Ok(rule) => policy.spec.rules.push(rule),
+                    Err(_) => {
+                        // Replace the policy set with error, then quit
+                        policy.spec.rules = vec![ir::Rule {
+                            consequents:     vec![ir::Atom::Fact(ir::Fact { ident: ir::Ident::new("error".into(), None), args: Vec::new() })],
+                            pos_antecedents: Vec::new(),
+                            neg_antecedents: Vec::new(),
+                        }];
+                        break;
+                    },
+                }
+            }
         }
 
         // If there were any illegal rules, inject error
         if add_error {
-            // Build the list of consequents
-            let mut consequents: Punctuated<Atom<&'m str, &'m str>, Comma<&'m str, &'m str>> = Punctuated::new();
-            consequents.push_first(Atom { ident: Ident { value: Span::new(("<datalog::Extractor::extract>", "error")) }, args: None });
-
-            // Then add the rule
-            policy.spec.rules.push(Rule { consequents, tail: None, dot: Dot { span: Span::new(("<datalog::Extractor::extract>", ".")) } })
+            policy.spec.rules.push(ir::Rule {
+                consequents:     vec![ir::Atom::Fact(ir::Fact { ident: ir::Ident::new("error".into(), None), args: Vec::new() })],
+                pos_antecedents: Vec::new(),
+                neg_antecedents: Vec::new(),
+            });
         }
 
         // OK, return the spec
@@ -380,7 +407,8 @@ mod tests {
     use std::collections::HashMap;
     use std::convert::Infallible;
 
-    use datalog::ast::{Atom, AtomArg, AtomArgs, Comma, Ident, Parens, Span, datalog, punct};
+    use datalog::ast::datalog;
+    use datalog::ir::{GroundAtom, Ident};
 
     use super::{Denotation, Effect, Extractor, Policy};
     mod justact {
@@ -392,25 +420,13 @@ mod tests {
 
 
     /// Generates the effect pattern.
-    fn make_effect(actor: &'static str, effect: &'static str) -> Atom<&'static str, &'static str> {
-        Atom {
-            ident: Ident { value: Span::new(("<make_effect>", "effect")) },
-            args:  Some(AtomArgs {
-                paren_tokens: Parens { open: Span::new(("<make_effect>", "(")), close: Span::new(("<make_effect>", ")")) },
-                args: punct![
-                    if actor.chars().next().map(char::is_uppercase).unwrap_or(false) {
-                        AtomArg::Var(Ident { value: Span::new(("<make_effect>", actor)) })
-                    } else {
-                        AtomArg::Atom(Ident { value: Span::new(("<make_effect>", actor)) })
-                    },
-                    Comma { span: Span::new(("<make_effect>", ",")) },
-                    if effect.chars().next().map(char::is_uppercase).unwrap_or(false) {
-                        AtomArg::Var(Ident { value: Span::new(("<make_effect>", effect)) })
-                    } else {
-                        AtomArg::Atom(Ident { value: Span::new(("<make_effect>", effect)) })
-                    }
-                ],
-            }),
+    fn make_effect(actor: &'static str, effect: &'static str) -> GroundAtom<(&'static str, &'static str)> {
+        GroundAtom {
+            ident: Ident::new("effect".into(), None),
+            args:  vec![GroundAtom { ident: Ident::new(actor.into(), None), args: Vec::new() }, GroundAtom {
+                ident: Ident::new(effect.into(), None),
+                args:  Vec::new(),
+            }],
         }
     }
 
@@ -461,7 +477,7 @@ mod tests {
     fn test_extract_policy_single() {
         let msg = Message { id: "A".into(), author_id: "Amy".into(), payload: "foo. bar :- baz(A).".into() };
         let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msg).unwrap();
-        assert_eq!(pol.spec, datalog!( foo. bar :- baz(A). ));
+        assert_eq!(pol.spec, datalog!( foo. bar :- baz(A). ).compile().unwrap());
     }
     #[test]
     fn test_extract_policy_multi() {
@@ -473,48 +489,45 @@ mod tests {
         // Extract the policy from it
         let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msgs).unwrap();
         // NOTE: MessageSet collects messages unordered, so the rules may be in any order
-        assert!(pol.spec == datalog!( foo. bar :- baz(A). ) || pol.spec == datalog!( bar :- baz(A). foo. ));
+        assert!(pol.spec == datalog!( foo. bar :- baz(A). ).compile().unwrap() || pol.spec == datalog!( bar :- baz(A). foo. ).compile().unwrap());
     }
 
     #[test]
     fn test_is_valid() {
         let mut pol = Policy::default();
-        pol.spec = datalog!( foo. bar :- baz(A). );
+        pol.spec = datalog!( foo. bar :- baz(A). ).compile().unwrap();
         assert!(<Policy as justact::Policy>::is_valid(&pol));
     }
     #[test]
     fn test_is_not_valid() {
         let mut pol = Policy::default();
-        pol.spec = datalog!( error :- foo. foo. );
+        pol.spec = datalog!( error :- foo. foo. ).compile().unwrap();
         assert!(!<Policy as justact::Policy>::is_valid(&pol));
     }
 
     #[test]
     fn test_truths() {
         let mut pol = Policy::default();
-        pol.spec = datalog!( foo. bar :- baz(A). );
+        pol.spec = datalog!( foo. bar :- baz(A). ).compile().unwrap();
         let den = <Policy as justact::Policy>::truths(&pol);
         assert_eq!(den, Denotation {
-            truths:  [
-                (Atom { ident: Ident { value: Span::new("<test_truths>", "foo") }, args: None }, Some(true)),
-                (Atom { ident: Ident { value: Span::new("<test_truths>", "bar") }, args: None }, Some(false)),
-            ]
-            .into_iter()
-            .map(|(a, v)| (a, v))
-            .collect(),
+            truths:  [(GroundAtom { ident: Ident::new("foo".into(), None), args: Vec::new() }, Some(true)),]
+                .into_iter()
+                .map(|(a, v)| (a, v))
+                .collect(),
             effects: HashMap::new(),
         })
     }
     #[test]
     fn test_effects() {
         let mut pol = Policy::default();
-        pol.spec = datalog!( effect(amy, read). effect(amy, write) :- baz(A). );
+        pol.spec = datalog!( effect(amy, read). effect(amy, write) :- baz(A). ).compile().unwrap();
         let den = <Policy as justact::Policy>::truths(&pol);
         assert_eq!(den, Denotation {
             truths:  [make_effect("amy", "read")].into_iter().map(|a| (a, Some(true))).collect(),
             effects: [make_effect("amy", "read")]
                 .into_iter()
-                .map(|a| (a.clone(), Effect { fact: a, affector: Ident { value: Span::new("<test_effects>", "amy") } }))
+                .map(|a| (a.clone(), Effect { fact: a, affector: Ident::new("amy".into(), None) }))
                 .collect(),
         })
     }

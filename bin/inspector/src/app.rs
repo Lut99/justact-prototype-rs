@@ -223,7 +223,7 @@ impl State {
     /// # Returns
     /// A [`StateGuard`] which can be accessed.
     #[inline]
-    fn lock(&mut self) -> StateGuard {
+    fn lock(&mut self) -> StateGuard<'_> {
         StateGuard {
             _errors: self.errors.lock(),
             audit: self.audit.lock(),

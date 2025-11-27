@@ -147,7 +147,7 @@ impl EventHandler {
     /// # Returns
     /// An [`EventHandled`] that can be used to process triggers.
     #[inline]
-    pub const fn handle<T, A, S, E>(&mut self, view: View<T, A, S, E>) -> EventHandled<T, A, S, E> {
+    pub const fn handle<T, A, S, E>(&mut self, view: View<T, A, S, E>) -> EventHandled<'_, T, A, S, E> {
         EventHandled {
             handler: self,
             view,
@@ -168,7 +168,7 @@ impl EventHandler {
     /// An [`EventHandled`] that can be used to process triggers.
     #[inline]
     #[cfg(feature = "dataplane")]
-    pub const fn handle_with_store<T, A, S, E>(&mut self, view: View<T, A, S, E>, store: ScopedStoreHandle) -> EventHandled<T, A, S, E> {
+    pub const fn handle_with_store<T, A, S, E>(&mut self, view: View<T, A, S, E>, store: ScopedStoreHandle) -> EventHandled<'_, T, A, S, E> {
         EventHandled { handler: self, view, store: Some(store), ready: true }
     }
 }

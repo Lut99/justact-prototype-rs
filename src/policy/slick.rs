@@ -895,10 +895,10 @@ mod tests {
                 make_flat_ground_atom_str("bar foo"),
                 make_flat_ground_atom_str("baz foo"),
                 make_flat_ground_atom_str("qux foo"),
-                make_flat_ground_atom_str("foo within (amy a)"),
-                make_flat_ground_atom_str("(bar foo) within (amy a)"),
-                make_flat_ground_atom_str("(baz foo) within (amy a)"),
-                make_flat_ground_atom_str("(qux foo) within (bob b)"),
+                make_flat_ground_atom_str("foo within (amy 1)"),
+                make_flat_ground_atom_str("(bar foo) within (amy 1)"),
+                make_flat_ground_atom_str("(baz foo) within (amy 1)"),
+                make_flat_ground_atom_str("(qux foo) within (bob 1)"),
             ]
             .into_iter()
             .map(|a| (a.clone(), Some(true)))
