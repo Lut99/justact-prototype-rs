@@ -94,7 +94,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
         // Prepare some Slick facts to use
         let surf_utils = GroundAtom::Tuple(vec![
             GroundAtom::Tuple(vec![GroundAtom::Constant(Text::from_str(super::surf::ID)), GroundAtom::Constant(Text::from_str("utils"))]),
-            GroundAtom::Constant(Text::from_str("ready")),
+            GroundAtom::Constant(Text::from_str("executed")),
         ]);
 
         // Encode Amy's event handler script

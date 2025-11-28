@@ -1,10 +1,7 @@
 // Statement (st-antonius 4).
 (bob step3) executed.
 
-authorise read of ((bob step1) filter-consented) for (bob step2) by surf.
+///// TIM: NEAT, THIS NOW ENCODES PRECISELY ST. ANTONIUS' INVOLVEMENT CHAIN DOWN THE WORKFLOW /////
 authorise read of ((st-antonius patients-2024) patients) for (bob step2) by surf.
-
-authorise read of ((surf utils) entry-count) for (bob step3) by st-antonius.
 authorise read of ((bob step2) consented) for (bob step3) by st-antonius.
-
 authorise read of ((bob step3) num-consented) for (bob step4) by bob.

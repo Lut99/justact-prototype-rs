@@ -113,6 +113,20 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                 // In the second example, SURF will suggest to do the second step once Bob
                 // publishes his workflow.
                 .on_stated((super::bob::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(3, ID, include_str!("../slick/surf_3.slick"))))?
+                
+                // Note that not just Bob needs to enact this action; SURF needs to as well to
+                // justify their own read! (It's not a valid effect, otherwise.)
+                .on_agreed_and_stated(
+                    (super::consortium::ID, 1),
+                    [
+                        (super::bob::ID, 1),
+                        (super::st_antonius::ID, 1),
+                        (super::st_antonius::ID, 4),
+                        (ID, 1),
+                        (ID, 3)
+                    ],
+                    |view, agree, just| view.enacted.add(Recipient::All, create_action('c', ID, agree, just))
+                )?
 
                 // Eventually, after Bob enacted the action and his first data becomes available,
                 // we do ours.
@@ -123,7 +137,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                         ((super::st_antonius::ID, "patients-2024"), "patients"),
                     ],
                     |_, _| -> Result<(), Error> {
-                        let enact_id: (&str, char) = (super::bob::ID, 'a');
+                        let enact_id: (&str, char) = (ID, 'c');
                         let _ = self.store.read(((super::bob::ID, "step1"), "filter-consented"), enact_id).cast()?;
                         let _ = self.store.read(((super::st_antonius::ID, "patients-2024"), "patients"), enact_id).cast()?;
                         // Sadly, we'll emulate the execution for now.

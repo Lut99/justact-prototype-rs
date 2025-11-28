@@ -159,6 +159,20 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                 // giving SURF authorisation to do task 2 while at it.
                 .on_stated((super::bob::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(4, ID, include_str!("../slick/st-antonius_4.slick"))))?
 
+                // Note that not just Bob needs to enact this action; St. Antonius needs to as well
+                // to justify their own read! (It's not a valid effect, otherwise.)
+                .on_agreed_and_stated(
+                    (super::consortium::ID, 1),
+                    [
+                        (super::bob::ID, 1),
+                        (ID, 1),
+                        (ID, 4),
+                        (super::surf::ID, 1),
+                        (super::surf::ID, 3)
+                    ],
+                    |view, agree, just| view.enacted.add(Recipient::All, create_action('c', ID, agree, just))
+                )?
+
                 // Eventually, after Bob enacted the action and SURF's data becomes available,
                 // we do ours.
                 .on_enacted_and_datas_created(
@@ -169,7 +183,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     ],
                     |_, _| -> Result<(), Error> {
                         // Now we can do our data accesses
-                        let enact_id: (&str, char) = (super::bob::ID, 'a');
+                        let enact_id: (&str, char) = (ID, 'c');
                         let _ = self.store.read(((super::surf::ID, "utils"), "entry-count"), enact_id).cast()?;
                         let consented = self
                             .store
