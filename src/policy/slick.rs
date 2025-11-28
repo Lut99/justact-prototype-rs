@@ -12,9 +12,10 @@
 //!   Implements JustAct traits for the [`slick`]-crate.
 //
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::error::Error;
+use std::fmt::{Debug, Display, Formatter, Result as FResult};
 use std::ops::{Deref, DerefMut};
 
 use nom::error::VerboseError;
@@ -42,11 +43,15 @@ pub enum SyntaxError {
         #[source]
         err:  Box<dyn 'static + Send + Error>,
     },
+    #[error("Misplaced wildcard in rule \"{rule:?}\"")]
+    MisplacedWildcard { rule: Rule },
     #[error("Failed to parse the input as valid Slick")]
     Slick {
         #[source]
         err: nom::Err<nom::error::VerboseError<String>>,
     },
+    #[error("Unsafe/Unbound variables {} in \"{rule:?}\"", PrettyDebugAndList(vars.iter()))]
+    UnboundVariables { vars: HashSet<Text>, rule: Rule },
 }
 
 
@@ -54,6 +59,45 @@ pub enum SyntaxError {
 
 
 /***** HELPERS *****/
+/// Pretty-prints an iterator over [`Debug`]able things.
+struct PrettyDebugAndList<I>(I);
+
+impl<I> Display for PrettyDebugAndList<I>
+where
+    I: Clone + Iterator,
+    I::Item: Debug,
+{
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        let mut iter = self.0.clone();
+        let mut first: bool = true;
+        let mut item: Option<I::Item> = iter.next();
+        while let Some(lookahead) = iter.next() {
+            // NOTE: At least one more item after this one to go
+            if !first {
+                write!(f, ", ")?;
+            } else {
+                first = false;
+            }
+            write!(f, "{item:?}")?;
+            item = Some(lookahead);
+        }
+
+        // There's 0 or 1 items remaining
+        if let Some(item) = item {
+            if !first {
+                write!(f, " and ")?;
+            }
+            write!(f, "{item:?}")?;
+        }
+
+        // Done
+        Ok(())
+    }
+}
+
+
+
 /// It's either a Slick atom (constant, variable, tuple or wildcard) OR a set of allowed constants.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum PatternAtom {
@@ -478,32 +522,19 @@ impl justact::Extractor<(String, u32), str, str> for Extractor {
                 },
             };
 
-            // // Search for any illegal `Fact within (Author M)` messages
-            // 'rule: for rule in &mut msg_prog.rules {
-            //     for cons in &rule.consequents {
-            //         if let Atom::Tuple(atoms) = cons {
-            //             if let [Atom::Variable(_), Atom::Constant(within), Atom::Tuple(nested)] = atoms.as_slice() {
-            //                 if let [Atom::Variable(_), Atom::Variable(_)] = nested.as_slice() {
-            //                     if within == &Text::from_str("within") {
-            //                         // Alright, full match of the illegal rule; replace it with error as a whole
-            //                         *rule = Rule {
-            //                             consequents: vec![
-            //                                 Atom::Constant(Text::from_str("error")),
-            //                                 Atom::Tuple(vec![
-            //                                     Atom::Constant(Text::from_str("illegal")),
-            //                                     Atom::Constant(Text::from_str("fact")),
-            //                                     Atom::Constant(Text::from_str("within")),
-            //                                 ]),
-            //                             ],
-            //                             rule_body:   RuleBody { pos_antecedents: Vec::new(), neg_antecedents: Vec::new(), checks: Vec::new() },
-            //                         };
-            //                         continue 'rule;
-            //                     }
-            //                 }
-            //             }
-            //         }
-            //     }
-            // }
+            // Remember to do the supposedly crucial preprocessing steps
+            // FROM: <https://github.com/sirkibsirkib/slick/blob/f693f756b1425c5d0fea7a6fb520018cf9c30625/src/bin.rs#L40>
+            msg_prog.preprocess();
+            let mut unbound_vars = HashSet::default();
+            for rule in &msg_prog.rules {
+                if rule.misplaced_wildcards() {
+                    return Err(SyntaxError::MisplacedWildcard { rule: rule.clone() });
+                }
+                rule.unbound_variables(&mut unbound_vars);
+                if !unbound_vars.is_empty() {
+                    return Err(SyntaxError::UnboundVariables { vars: unbound_vars.into_iter().copied().collect(), rule: rule.clone() });
+                }
+            }
 
             // Generate additional `says`-heads
             for rule in &mut msg_prog.rules {

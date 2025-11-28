@@ -1,2 +1,2 @@
 // Statement (st-antonius 3)
-authorise (amy end) in (amy 2) by amy.
+authorise read of ((amy count-patients) num-patients) for (amy end) by amy.

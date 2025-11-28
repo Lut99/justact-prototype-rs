@@ -1,24 +1,18 @@
 // Statement (bob 1).
 (bob step1) has output filter-consented.
-(bob step1) ready.
 
 (bob step2) has input ((bob step1) filter-consented).
 (bob step2) has input ((st-antonius patients-2024) patients).
 (bob step2) has output consented.
-(bob step2) ready.
 
 (bob step3) has input ((surf utils) entry-count).
 (bob step3) has input ((bob step2) consented).
 (bob step3) has output num-consented.
-(bob step3) ready.
 
 (bob step4) has input ((bob step3) num-consented).
-(bob step4) ready.
-
-error if (bob Name1) ready and not (bob Name1) executed and (bob Name2) executed.
 
 authorise read of Variable for Task by Worker
-    if Worker says (Task executed) and (Task ready) and Task has input Variable.
+    if Worker says (Task executed) and Task has input Variable.
 
 (bob step1) executed.
 (bob step4) executed.

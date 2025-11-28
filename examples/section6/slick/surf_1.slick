@@ -1,4 +1,3 @@
 // Statement (surf 1).
 (surf utils) has output entry-count.
-(surf utils) ready.
 (surf utils) executed.

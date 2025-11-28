@@ -1,5 +1,10 @@
 // Statement (st-antonius 4).
 (bob step3) executed.
-authorise (bob step2) in (bob 1) by surf.
-authorise (bob step3) in (bob 1) by st-antonius.
-authorise (bob step4) in (bob 1) by bob.
+
+authorise read of ((bob step1) filter-consented) for (bob step2) by surf.
+authorise read of ((st-antonius patients-2024) patients) for (bob step2) by surf.
+
+authorise read of ((surf utils) entry-count) for (bob step3) by st-antonius.
+authorise read of ((bob step2) consented) for (bob step3) by st-antonius.
+
+authorise read of ((bob step3) num-consented) for (bob step4) by bob.

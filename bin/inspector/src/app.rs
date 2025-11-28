@@ -89,6 +89,50 @@ async fn wait_for_event_or_forever(channel: &mut Receiver<()>) -> Option<()> {
 
 
 
+/// Constructs a [`GroundAtom`] representing the effect for reading.
+///
+/// # Arguments
+/// - `who`: The name of the person doing an action for which the effect needs to be generated.
+///   Essentially, "who reads".
+/// - `var`: The identifier of the variable in question. Give as a tuple of
+///   `((<WORKER> <TASK>) <VARIABLE)`.
+///
+/// # Returns
+/// A [`GroundAtom`] encoding `<who> reads <var>`.
+fn gen_read_effect(who: &str, var: &((String, String), String)) -> GroundAtom {
+    GroundAtom::Tuple(vec![
+        GroundAtom::Constant(SlickText::from_str(who)),
+        GroundAtom::Constant(SlickText::from_str("reads")),
+        GroundAtom::Tuple(vec![
+            GroundAtom::Tuple(vec![GroundAtom::Constant(SlickText::from_str(&var.0.0)), GroundAtom::Constant(SlickText::from_str(&var.0.1))]),
+            GroundAtom::Constant(SlickText::from_str(&var.1)),
+        ]),
+    ])
+}
+
+/// Constructs a [`GroundAtom`] representing the effect for writing.
+///
+/// # Arguments
+/// - `who`: The name of the person doing an action for which the effect needs to be generated.
+///   Essentially, "who writes".
+/// - `var`: The identifier of the variable in question. Give as a tuple of
+///   `((<WORKER> <TASK>) <VARIABLE>)`.
+///
+/// # Returns
+/// A [`GroundAtom`] encoding `<who> writes <var>`.
+fn gen_write_effect(who: &str, var: &((String, String), String)) -> GroundAtom {
+    GroundAtom::Tuple(vec![
+        GroundAtom::Constant(SlickText::from_str(who)),
+        GroundAtom::Constant(SlickText::from_str("writes")),
+        GroundAtom::Tuple(vec![
+            GroundAtom::Tuple(vec![GroundAtom::Constant(SlickText::from_str(&var.0.0)), GroundAtom::Constant(SlickText::from_str(&var.0.1))]),
+            GroundAtom::Constant(SlickText::from_str(&var.1)),
+        ]),
+    ])
+}
+
+
+
 /// Centers an area for something.
 ///
 /// # Arguments
@@ -464,7 +508,8 @@ impl<'s> StateGuard<'s> {
                         contents.is_some(),
                     ) {
                         (Some(Ok(perm)), true) => {
-                            if perm.is_permitted() {
+                            let effect: GroundAtom = gen_read_effect(who, id);
+                            if perm.is_permitted() && <[_]>::iter(&perm.effects).find(|e| e.fact == effect).is_some() {
                                 text.push_span(Span::from("✓").bold().green());
                             } else {
                                 text.push_span(Span::from("!!!").bold().white().on_red());
@@ -498,7 +543,8 @@ impl<'s> StateGuard<'s> {
                         .and_then(|i| self.audit.permission_of(i))
                     {
                         Some(Ok(perm)) => {
-                            if perm.is_permitted() {
+                            let effect: GroundAtom = gen_write_effect(who, id);
+                            if perm.is_permitted() && <[_]>::iter(&perm.effects).find(|e| e.fact == effect).is_some() {
                                 text.push_span(Span::from("✓").bold().green());
                             } else {
                                 text.push_span(Span::from("!!!").bold().white().on_red());
@@ -977,17 +1023,7 @@ impl<'s> StateGuard<'s> {
                             frame.render_widget(
                                 Paragraph::new({
                                     let mut text = Text::from(" - Effect : ");
-                                    let effect: GroundAtom = GroundAtom::Tuple(vec![
-                                        GroundAtom::Constant(SlickText::from_str(context.0.as_ref())),
-                                        GroundAtom::Constant(SlickText::from_str("reads")),
-                                        GroundAtom::Tuple(vec![
-                                            GroundAtom::Tuple(vec![
-                                                GroundAtom::Constant(SlickText::from_str(&id.as_ref().0.0)),
-                                                GroundAtom::Constant(SlickText::from_str(&id.as_ref().0.1)),
-                                            ]),
-                                            GroundAtom::Constant(SlickText::from_str(&id.as_ref().1)),
-                                        ]),
-                                    ]);
+                                    let effect: GroundAtom = gen_read_effect(who, id);
                                     text.push_span(Span::from(format!("{effect:?}")).bold());
                                     text.push_span(" ");
                                     if <[_]>::iter(&perm.effects).find(|e| e.fact == effect).is_some() {
@@ -1090,17 +1126,7 @@ impl<'s> StateGuard<'s> {
                             frame.render_widget(
                                 Paragraph::new({
                                     let mut text = Text::from(" - Effect : ");
-                                    let effect: GroundAtom = GroundAtom::Tuple(vec![
-                                        GroundAtom::Constant(SlickText::from_str(context.0.as_ref())),
-                                        GroundAtom::Constant(SlickText::from_str("writes")),
-                                        GroundAtom::Tuple(vec![
-                                            GroundAtom::Tuple(vec![
-                                                GroundAtom::Constant(SlickText::from_str(&id.as_ref().0.0)),
-                                                GroundAtom::Constant(SlickText::from_str(&id.as_ref().0.1)),
-                                            ]),
-                                            GroundAtom::Constant(SlickText::from_str(&id.as_ref().1)),
-                                        ]),
-                                    ]);
+                                    let effect: GroundAtom = gen_write_effect(who, id);
                                     text.push_span(Span::from(format!("{effect:?}")).bold());
                                     text.push_span(" ");
                                     if <[_]>::iter(&perm.effects).find(|e| e.fact == effect).is_some() {
