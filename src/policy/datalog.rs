@@ -487,9 +487,12 @@ mod tests {
         let msgs = justact::MessageSet::from([msg1, msg2]);
 
         // Extract the policy from it
-        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msgs).unwrap();
+        // NOTE: MessageSet collects messages unordered, so we'll have to sort them to get a deterministic answer
+        let mut pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msgs).unwrap();
+        pol.rules.sort_by(|r1, r2| r1.to_string().cmp(&r2.to_string()));
+
         // NOTE: MessageSet collects messages unordered, so the rules may be in any order
-        assert!(pol.spec == datalog!( foo. bar :- baz(A). ).compile().unwrap() || pol.spec == datalog!( bar :- baz(A). foo. ).compile().unwrap());
+        assert_eq!(pol.spec, datalog!( bar :- baz(A). foo. ).compile().unwrap());
     }
 
     #[test]

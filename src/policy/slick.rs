@@ -652,21 +652,10 @@ mod tests {
         let mut pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &msgs).unwrap();
         // NOTE: MessageSet collects messages unordered, so the rules may be in any order
         // For consistency, we ensure they aren't.
-        pol.rules.sort_by(|lhs, rhs| lhs.consequents.cmp(&rhs.consequents));
+        pol.rules.sort_by(|lhs, rhs| format!("{lhs:?}").cmp(&format!("{rhs:?}")));
 
         assert_eq!(pol.program, Program {
             rules: vec![
-                Rule {
-                    consequents: vec![
-                        Atom::Constant(Text::from_str("foo")),
-                        Atom::Tuple(vec![
-                            Atom::Constant(Text::from_str("amy")),
-                            Atom::Constant(Text::from_str("says")),
-                            Atom::Constant(Text::from_str("foo"))
-                        ])
-                    ],
-                    rule_body:   RuleBody { pos_antecedents: vec![], neg_antecedents: vec![], checks: vec![] },
-                },
                 Rule {
                     consequents: vec![
                         Atom::Constant(Text::from_str("bar")),
@@ -681,6 +670,17 @@ mod tests {
                         neg_antecedents: vec![],
                         checks: vec![],
                     },
+                },
+                Rule {
+                    consequents: vec![
+                        Atom::Constant(Text::from_str("foo")),
+                        Atom::Tuple(vec![
+                            Atom::Constant(Text::from_str("amy")),
+                            Atom::Constant(Text::from_str("says")),
+                            Atom::Constant(Text::from_str("foo"))
+                        ])
+                    ],
+                    rule_body:   RuleBody { pos_antecedents: vec![], neg_antecedents: vec![], checks: vec![] },
                 },
             ],
         });
