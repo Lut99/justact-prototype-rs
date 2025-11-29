@@ -4,7 +4,7 @@ amy is a patient. bob is a patient. dan is a patient.
 trusted consent for Task if st-antonius says (Sayer is trusted)
     and Sayer says (Patient consents to Task).
 
-Task lacks trusted consent if authorise read of Variable for Task by Worker
+Task lacks trusted consent if authorise read of Variable for Task by Worker via consent
     and Patient is a patient and not trusted consent for Task.
 
 authorise read of Variable for Task by Worker if Patient consents to Task
