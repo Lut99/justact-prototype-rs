@@ -2,32 +2,34 @@
 error if error _.
 error (illegal (Sayer says (Agent says Fact))) if Sayer says (Agent says Fact).
 
+///// TIM SAYS: UNNECESSARY, NEVER USED AGAIN IN THE LAND /////
 // ... continuing statement ( consortium 1) ...
-Sayer drives Task if Sayer says (Task has input Variable).
-Sayer drives Task if Sayer says (Task has output Label).
-error (illegal (Agent drives Task) by Sayer) if Sayer says (Agent drives Task) and diff { Sayer consortium }.
-error (illegal (Agent drives (Driver Name)) because Agent aint Driver) if Agent drives (Driver Name) and diff { Agent Driver }.
+error (Sayer defined input Variable for (Driver Name) illegally) if Sayer says ((Driver Name) has input Variable) and diff { Sayer Driver }.
+error (Sayer defined output Label for (Driver Name) illegally) if Sayer says ((Driver Name) has output Label) and diff { Sayer Driver }.
+///////////////////////////////////////////////////////////////
 
 // ... continuing statement ( consortium 1) .
+///// TIM: CHANGED TO REMOVE DRIVER, NOW THIS RULE ENFORCES ONLY DRIVER CAN ADD IN/OUTPUTS /////
 error (illegal (Task2 executed) when input (Task1 Label) aint executed yet) if Task2 executed and Task2 has input (Task1 Label) and not Task1 executed.
 
 // ... continuing statement ( consortium 1) ...
-// Worker reads Variable for Task if Task has input Variable and actor Worker and Worker says (Task executed).
-// Worker writes (Task Variable) if Task has output Variable and actor Worker and Worker says (Task executed).
-Worker reads Variable if Task has input Variable and Worker says (Task executed).
-Worker writes (Task Variable) if Task has output Variable and Worker says (Task executed).
+///// REMARK: IN THE EXAMPLE, LOOKS LIKE EVERYBODY USES BOB'S ACTION AS JUSTIFICATION. HENCE, ACTUALLY, `and actor Worker` IS WEIRD??? /////
+Worker reads Variable if Task has input Variable and actor Worker and Worker says (Task executed).
+Worker writes (Task Label) if Task has output Label and actor Worker and Worker says (Task executed).
 error (illegal (Worker reads Variable) said by non consortium Sayer) if Sayer says (Worker reads Variable) and diff { consortium Sayer }.
+error (illegal (Worker writes Variable) said by non consortium Sayer) if Sayer says (Worker writes Variable) and diff { consortium Sayer }.
 
 // ... completing statement ( consortium 1).
 error (illegal read by Worker of Variable without Checker authorisation) if Worker reads Variable
+                                                                             and Worker says (Task executed)
                                                                              and Task has input Variable
                                                                              and Variable involves Checker
                                                                              and not Checker says ( authorise read of Variable for Task by Worker ).
-                                                                            
-// The updated rules!
-Task involves Agent if Agent controls (Task Label)
-                    and not Agent says ((Task Label) is insensitive).
-Task2 involves Agent if Task has input (Task1 Label) and Task1 involves Agent
 
 // The new rule!
 (surf utils) involves surf.
+
+// The updated rules!
+Variable involves Checker if Checker controls Variable and not Checker says (Variable is insensitive).
+(Task Label) involves Checker if Variable involves Checker and Task has input Variable and Task has output Label
+    and not checker says ((Task Label) is insensitive).
