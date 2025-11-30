@@ -6,14 +6,12 @@ error (illegal (Sayer says (Agent says Fact))) if Sayer says (Agent says Fact).
 // ... continuing statement ( consortium 1) ...
 error (Sayer defined input Variable for (Driver Name) illegally) if Sayer says ((Driver Name) has input Variable) and diff { Sayer Driver }.
 error (Sayer defined output Label for (Driver Name) illegally) if Sayer says ((Driver Name) has output Label) and diff { Sayer Driver }.
-///////////////////////////////////////////////////////////////
 
 // ... continuing statement ( consortium 1) .
 ///// TIM: CHANGED TO REMOVE DRIVER, NOW THIS RULE ENFORCES ONLY DRIVER CAN ADD IN/OUTPUTS /////
 error (illegal (Task2 executed) when input (Task1 Label) aint executed yet) if Task2 executed and Task2 has input (Task1 Label) and not Task1 executed.
 
 // ... continuing statement ( consortium 1) ...
-///// REMARK: IN THE EXAMPLE, LOOKS LIKE EVERYBODY USES BOB'S ACTION AS JUSTIFICATION. HENCE, ACTUALLY, `and actor Worker` IS WEIRD??? /////
 Worker reads Variable if Task has input Variable and actor Worker and Worker says (Task executed).
 Worker writes (Task Label) if Task has output Label and actor Worker and Worker says (Task executed).
 error (illegal (Worker reads Variable) said by non consortium Sayer) if Sayer says (Worker reads Variable) and diff { consortium Sayer }.
@@ -25,6 +23,11 @@ error (illegal read by Worker of Variable without Checker authorisation) if Work
                                                                              and Task has input Variable
                                                                              and Variable involves Checker
                                                                              and not Checker says ( authorise read of Variable for Task by Worker ).
+                                                                           
+// The updated rules!
+Task involves Agent if Agent controls (Task Label)
+                    and not Agent says ((Task Label) is insensitive).
+Task2 involves Agent if Task has input (Task1 Label) and Task1 involves Agent
 
 // The new rule!
 (surf utils) involves surf.
