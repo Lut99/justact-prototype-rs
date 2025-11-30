@@ -17,6 +17,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use ::justact::actions::Action as _;
 use ::justact::collections::map::InfallibleMap as _;
 use ::justact::policies::{Denotation as _, Policy as _};
 use slick::GroundAtom;
@@ -175,7 +176,7 @@ impl Audit {
                     let mut validity: Permission = Default::default();
 
                     // Before we begin, compute the action's denotation
-                    let denot: Denotation = match Extractor.extract_with_actor(&action.id.0, &action.justification) {
+                    let denot: Denotation = match Extractor.extract_with_actor(&action.id.0, &action.payload()) {
                         Ok(mut pol) => {
                             pol.update_effect_pattern(
                                 PatternAtom::Tuple(vec![
@@ -222,12 +223,12 @@ impl Audit {
 
 
                     // First property: check whether everything in the justification is stated
-                    for msg in action.justification.iter() {
+                    for msg in action.payload().iter() {
                         validity.stated &= self.stated.contains(&msg.id);
                     }
 
                     // Second property: is the basis in the justification?
-                    validity.based = action.justification.contains_key(&action.basis.message.id);
+                    validity.based = action.payload().contains_key(&action.basis.message.id);
 
                     // Third property: are the truths valid?
                     // NOTE: Because we have sorted truths already, the search should be crazy fast

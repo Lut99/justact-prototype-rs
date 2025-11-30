@@ -16,11 +16,12 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use rand::Rng as _;
 mod justact {
     pub use ::justact::actions::{Action, ConstructableAction};
     pub use ::justact::agreements::Agreement;
     pub use ::justact::auxillary::{Actored, Authored, Identifiable, Timed};
-    pub use ::justact::collections::map::Map;
+    pub use ::justact::collections::map::{InfallibleMapSync, Map};
     pub use ::justact::messages::{ConstructableMessage, Message, MessageSet};
 }
 
@@ -75,11 +76,17 @@ impl justact::Action for Action {
     }
 
     #[inline]
-    fn payload(&self) -> justact::MessageSet<&Self::Message>
+    fn payload(&self) -> justact::MessageSet<Self::Message>
     where
         <Self::Message as justact::Identifiable>::Id: ToOwned,
     {
-        let mut res = self.extra();
+        use justact::{ConstructableMessage as _, InfallibleMapSync as _};
+
+        let author = &self.id.0;
+        let mut res = self.extra().clone();
+        res.add(self.basis.message.clone());
+        res.add(Arc::new(Message::new((author.clone(), rand::rng().random::<u32>()), author.clone(), "".into())));
+        res
     }
 }
 impl justact::Actored for Action {
