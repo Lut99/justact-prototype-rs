@@ -44,7 +44,7 @@ pub struct Action {
     /// The payload of the action.
     pub basis: Agreement,
     /// The full justification.
-    pub justification: justact::MessageSet<Arc<Message>>,
+    pub extra: justact::MessageSet<Arc<Message>>,
 }
 impl justact::ConstructableAction for Action {
     #[inline]
@@ -52,12 +52,12 @@ impl justact::ConstructableAction for Action {
         id: <Self::Id as ToOwned>::Owned,
         actor_id: <Self::ActorId as ToOwned>::Owned,
         basis: justact::Agreement<Self::Message, Self::Timestamp>,
-        justification: justact::MessageSet<Self::Message>,
+        extra: justact::MessageSet<Self::Message>,
     ) -> Self
     where
         Self: Sized,
     {
-        Self { id: (actor_id.to_owned(), id.to_owned().1), basis, justification }
+        Self { id: (actor_id.to_owned(), id.to_owned().1), basis, extra }
     }
 }
 impl justact::Action for Action {
@@ -67,11 +67,19 @@ impl justact::Action for Action {
     fn basis(&self) -> &justact::Agreement<Self::Message, Self::Timestamp> { &self.basis }
 
     #[inline]
-    fn justification(&self) -> &justact::MessageSet<Self::Message>
+    fn extra(&self) -> &justact::MessageSet<Self::Message>
     where
         <Self::Message as justact::Identifiable>::Id: ToOwned,
     {
-        &self.justification
+        &self.extra
+    }
+
+    #[inline]
+    fn payload(&self) -> justact::MessageSet<&Self::Message>
+    where
+        <Self::Message as justact::Identifiable>::Id: ToOwned,
+    {
+        let mut res = self.extra();
     }
 }
 impl justact::Actored for Action {
