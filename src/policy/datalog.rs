@@ -484,7 +484,7 @@ mod tests {
         // Construct a set of messages
         let msg1 = Message { id: "A".into(), author_id: "Amy".into(), payload: "foo.".into() };
         let msg2 = Message { id: "B".into(), author_id: "Bob".into(), payload: "bar :- baz(A).".into() };
-        let msgs = justact::MessageSet::from([msg1, msg2]);
+        let msgs = justact::MessageSet::from_iter([msg1, msg2]);
 
         // Extract the policy from it
         // NOTE: MessageSet collects messages unordered, so we'll have to sort them to get a deterministic answer

@@ -132,26 +132,32 @@ impl Agent<(String, u32), (String, char), str, u64> for Dan {
         view.enacted
             .add(
                 Recipient::All,
-                SA::new((String::new(), 'a'), self.id().into(), agree1.clone(), MessageSet::from([agree1.message.clone(), message.clone()])),
+                SA::new((String::new(), 'a'), self.id().into(), agree1.clone(), MessageSet::from_iter([agree1.message.clone(), message.clone()])),
             )
             .unwrap();
 
         // Oh no, Dan, be careful! He's stating an action which isn't based!!
         view.stated.add(Recipient::All, message.clone()).unwrap();
         view.enacted
-            .add(Recipient::All, SA::new((String::new(), 'b'), self.id().into(), agree1.clone(), MessageSet::from([message.clone()])))
+            .add(Recipient::All, SA::new((String::new(), 'b'), self.id().into(), agree1.clone(), MessageSet::from_iter([message.clone()])))
             .unwrap();
 
         // Dan!! What's this!! Why would you publish an illegal action??
         let bad_msg = SM::new((String::new(), 2), self.id().into(), "illegal actions are taken.".into());
         view.stated.add(Recipient::All, bad_msg.clone()).unwrap();
         view.enacted
-            .add(Recipient::All, SA::new((String::new(), 'c'), self.id().into(), agree1.clone(), MessageSet::from([agree1.message.clone(), bad_msg])))
+            .add(
+                Recipient::All,
+                SA::new((String::new(), 'c'), self.id().into(), agree1.clone(), MessageSet::from_iter([agree1.message.clone(), bad_msg])),
+            )
             .unwrap();
 
         // I'm not believing my eyes... Dan, that's terrible... where is your heart, Dan? Why _not_ refer to a current agreement?
         view.enacted
-            .add(Recipient::All, SA::new((String::new(), 'd'), self.id().into(), agree2.clone(), MessageSet::from([agree2.message.clone(), message])))
+            .add(
+                Recipient::All,
+                SA::new((String::new(), 'd'), self.id().into(), agree2.clone(), MessageSet::from_iter([agree2.message.clone(), message])),
+            )
             .unwrap();
 
 

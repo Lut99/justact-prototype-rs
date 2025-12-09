@@ -677,7 +677,7 @@ mod tests {
         // Construct a set of messages
         let msg1 = Message { id: ("amy".into(), 1), payload: "foo.".into() };
         let msg2 = Message { id: ("bob".into(), 1), payload: "bar :- baz(A).".into() };
-        let msgs = justact::MessageSet::from([msg1, msg2]);
+        let msgs = justact::MessageSet::from_iter([msg1, msg2]);
 
         // Extract the policy from it
         let mut pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &msgs).unwrap();
@@ -859,7 +859,8 @@ mod tests {
         // First, see if the derivation works.
         let msg1 = Message { id: ("amy".into(), 1), payload: "foo. (bar foo) if foo. baz X if bar X.".into() };
         let msg2 = Message { id: ("bob".into(), 1), payload: "qux X if baz X.".into() };
-        let pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &justact::MessageSet::from([msg1, msg2])).unwrap();
+        let pol =
+            <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &justact::MessageSet::from_iter([msg1, msg2])).unwrap();
         let den = <Policy as justact::Policy>::truths(&pol);
         assert_eq!(den, Denotation {
             truths:  [

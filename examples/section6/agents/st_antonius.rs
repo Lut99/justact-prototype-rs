@@ -22,7 +22,7 @@ use justact::auxillary::Identifiable;
 use justact::collections::map::{Map, MapAsync};
 use justact::collections::set::InfallibleSet;
 use justact::collections::{Recipient, Singleton};
-use justact::messages::ConstructableMessage;
+use justact::messages::{ConstructableMessage, MessageSet};
 use justact::policies::{Extractor as _, Policy as _};
 use justact::times::Times;
 use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
@@ -100,7 +100,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                 [(ID, 1)],
                 |view, agree, just| -> Result<(), Error> {
                     // We can justify writing to our own variable...
-                    view.enacted.add(Recipient::All, create_action('a', ID, agree, just)).cast()?;
+                    view.enacted.add(Recipient::All, create_action('a', ID, agree, MessageSet::from_iter(just))).cast()?;
                     // ...and then write it!
                     self.store
                         .write(((ID, "patients-2024"), "patients"), (ID, 'a'), b"billy bob jones\ncharlie brown\nanakin skywalker")
@@ -124,7 +124,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                         (super::st_antonius::ID, 2),
                         (super::surf::ID, 1),
                     ],
-                    |view, agree, just| view.enacted.add(Recipient::All, create_action('b', ID, agree.clone(), just))
+                    |view, agree, just| view.enacted.add(Recipient::All, create_action('b', ID, agree.clone(), MessageSet::from_iter(just)))
                 )?
                 // Then, after waiting for the input to be available, it updates the data plane.
                 .on_enacted_and_datas_created(
@@ -170,7 +170,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                         (super::surf::ID, 1),
                         (super::surf::ID, 3)
                     ],
-                    |view, agree, just| view.enacted.add(Recipient::All, create_action('c', ID, agree, just))
+                    |view, agree, just| view.enacted.add(Recipient::All, create_action('c', ID, agree, MessageSet::from_iter(just)))
                 )?
 
                 // Eventually, after Bob enacted the action and SURF's data becomes available,

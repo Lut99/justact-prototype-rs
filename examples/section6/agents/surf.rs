@@ -20,7 +20,7 @@ use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
 use justact::collections::Recipient;
 use justact::collections::map::{InfallibleMapSync as _, Map, MapAsync};
-use justact::messages::ConstructableMessage;
+use justact::messages::{ConstructableMessage, MessageSet};
 use justact::times::Times;
 use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
 pub use justact_prototype::events::Error;
@@ -91,7 +91,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                     (super::consortium::ID, 1),
                     [(ID, 1)],
                     |view, agree, just| -> Result<(), Error> {
-                        view.enacted.add(Recipient::All, create_action('a', ID, agree, just)).cast()?;
+                        view.enacted.add(Recipient::All, create_action('a', ID, agree, MessageSet::from_iter(just))).cast()?;
                         self.store.write(((ID, "utils"), "entry-count"), (ID, 'a'), b"super_clever_code();").cast()?;
                         Ok(())
                     }
@@ -125,7 +125,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                         (ID, 1),
                         (ID, 3)
                     ],
-                    |view, agree, just| view.enacted.add(Recipient::All, create_action('c', ID, agree, just))
+                    |view, agree, just| view.enacted.add(Recipient::All, create_action('c', ID, agree, MessageSet::from_iter(just)))
                 )?
 
                 // Eventually, after Bob enacted the action and his first data becomes available,
@@ -165,7 +165,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                         view.stated.add(Recipient::All, msg).cast()?;
 
                         // ...and then enact it!
-                        view.enacted.add(Recipient::All, create_action('b', ID, agree.clone(), just)).cast()?;
+                        view.enacted.add(Recipient::All, create_action('b', ID, agree.clone(), MessageSet::from_iter(just))).cast()?;
 
                         // (and model the read)
                         let _ = self.store.read(((super::st_antonius::ID, "patients-2024"), "patients"), (ID, 'b')).cast()?;

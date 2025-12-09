@@ -20,7 +20,7 @@ use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
 use justact::collections::Recipient;
 use justact::collections::map::{Map, MapAsync};
-use justact::messages::ConstructableMessage;
+use justact::messages::{ConstructableMessage, MessageSet};
 use justact::times::Times;
 use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
 pub use justact_prototype::events::Error;
@@ -121,7 +121,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
                     (super::surf::ID, 1),
                 ],
                 |view, agree, just| -> Result<(), Error> {
-                    view.enacted.add(Recipient::All, create_action('a', ID, agree, just)).cast()?;
+                    view.enacted.add(Recipient::All, create_action('a', ID, agree, MessageSet::from_iter(just))).cast()?;
                     self.store.read(((ID, "count-patients"), "num-patients"), (ID, 'a')).cast()?;
                     Ok(())
                 })?

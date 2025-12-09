@@ -20,7 +20,7 @@ use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
 use justact::collections::Recipient;
 use justact::collections::map::{Map, MapAsync};
-use justact::messages::ConstructableMessage;
+use justact::messages::{ConstructableMessage, MessageSet};
 use justact::times::Times;
 use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
 pub use justact_prototype::events::Error;
@@ -99,7 +99,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Bob {
                     (super::surf::ID, 1),
                     (super::surf::ID, 3)
                 ],
-                |view, agree, just| view.enacted.add(Recipient::All, create_action('a', ID, agree, just))
+                |view, agree, just| view.enacted.add(Recipient::All, create_action('a', ID, agree, MessageSet::from_iter(just)))
             )?
             // Once the enactment is there, do step 1.
             .on_enacted((ID, 'a'), |_, _| self.store.write(((ID, "step1"), "filter-consented"), (ID, 'a'), b"code_that_actually_filters_consent_wowie();"))?

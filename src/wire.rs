@@ -80,13 +80,7 @@ impl justact::Action for Action {
     where
         <Self::Message as justact::Identifiable>::Id: ToOwned,
     {
-        use justact::{ConstructableMessage as _, InfallibleMapSync as _};
-
-        let author = &self.id.0;
-        let mut res = self.extra().clone();
-        res.add(self.basis.message.clone());
-        res.add(Arc::new(Message::new((author.clone(), rand::rng().random::<u32>()), author.clone(), "".into())));
-        res
+        todo!()
     }
 }
 impl justact::Actored for Action {
