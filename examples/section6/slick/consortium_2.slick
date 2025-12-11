@@ -2,13 +2,12 @@
 error if error _.
 error (illegal (Sayer says (Agent says Fact))) if Sayer says (Agent says Fact).
 
-///// TIM SAYS: UNNECESSARY, NEVER USED AGAIN IN THE LAND /////
 // ... continuing statement ( consortium 1) ...
+///// TIM: CHANGED TO REMOVE DRIVER, NOW THIS RULE ENFORCES ONLY DRIVER CAN ADD IN/OUTPUTS /////
 error (Sayer defined input Variable for (Driver Name) illegally) if Sayer says ((Driver Name) has input Variable) and diff { Sayer Driver }.
 error (Sayer defined output Label for (Driver Name) illegally) if Sayer says ((Driver Name) has output Label) and diff { Sayer Driver }.
 
 // ... continuing statement ( consortium 1) .
-///// TIM: CHANGED TO REMOVE DRIVER, NOW THIS RULE ENFORCES ONLY DRIVER CAN ADD IN/OUTPUTS /////
 error (illegal (Task2 executed) when input (Task1 Label) aint executed yet) if Task2 executed and Task2 has input (Task1 Label) and not Task1 executed.
 
 // ... continuing statement ( consortium 1) ...
