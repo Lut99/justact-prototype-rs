@@ -15,6 +15,7 @@
 use std::io::ErrorKind;
 
 use justact_prototype::auditing::Event;
+use justact_prototype::policy::slick::Program;
 use log::debug;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt as _, BufReader};
@@ -29,6 +30,12 @@ pub enum Error {
         pos: (usize, usize),
         #[source]
         err: serde_json::Error,
+    },
+    #[error("{}:{}: Illegal Slick policy string", pos.0, pos.1)]
+    EventParse {
+        pos: (usize, usize),
+        #[source]
+        err: nom::Err<nom::error::VerboseError<String>>,
     },
     #[error("{}:{}: Expected closing brance '}}' for opening brace at {}:{}", close.0, close.1, open.0, open.1 )]
     MissingClosingBrace { open: (usize, usize), close: (usize, usize) },
@@ -118,7 +125,7 @@ where
     R: AsyncRead + Unpin,
 {
     /// Yields the next item in the iterator, as long as supply lasts.
-    pub async fn next(&mut self) -> Option<Result<Event<'static>, Error>> {
+    pub async fn next(&mut self) -> Option<Result<Event<'static, Program>, Error>> {
         // Start to search for the next '{'
         let mut buf: String = String::with_capacity(32);
         loop {
@@ -149,8 +156,22 @@ where
                                 // If we have parity, we have a (potential) toplevel!
                                 if depth == 0 {
                                     debug!("Found raw trace: {buf:?}");
-                                    match serde_json::from_str::<Event<'static>>(&buf) {
-                                        Ok(trace) => return Some(Ok(trace)),
+                                    match serde_json::from_str::<Event<str>>(&buf) {
+                                        Ok(trace) => {
+                                            // Deserialize the slick program
+                                            let trace: Result<Event<Program>, nom::Err<nom::error::VerboseError<String>>> =
+                                                trace.deserialize().map_err(|err: nom::Err<nom::error::VerboseError<&str>>| {
+                                                    err.map(|err| nom::error::VerboseError {
+                                                        errors: err.errors.into_iter().map(|(src, err)| (src.to_string(), err)).collect(),
+                                                    })
+                                                });
+                                            match trace {
+                                                Ok(trace) => return Some(Ok(trace.into_owned())),
+                                                Err(err) => {
+                                                    return Some(Err(Error::EventParse { pos: open_pos, err }));
+                                                },
+                                            }
+                                        },
                                         Err(err) => return Some(Err(Error::EventDeserialize { pos: open_pos, err })),
                                     }
                                 }

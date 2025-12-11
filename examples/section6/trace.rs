@@ -26,7 +26,7 @@ use justact_prototype::io::EventHandler;
 pub struct StdoutEventHandler;
 impl EventHandler for StdoutEventHandler {
     #[inline]
-    fn handle(&mut self, event: Event) -> Result<(), Box<dyn 'static + Send + Error>> {
+    fn handle(&mut self, event: Event<str>) -> Result<(), Box<dyn 'static + Send + Error>> {
         println!("{}", serde_json::to_string(&event).map_err(|err| -> Box<dyn 'static + Send + Error> { Box::new(err) })?);
         Ok(())
     }
@@ -55,7 +55,7 @@ impl FileEventHandler {
 }
 impl EventHandler for FileEventHandler {
     #[inline]
-    fn handle(&mut self, event: Event) -> Result<(), Box<dyn 'static + Send + std::error::Error>> {
+    fn handle(&mut self, event: Event<str>) -> Result<(), Box<dyn 'static + Send + std::error::Error>> {
         self.handle
             .write_all(&serde_json::to_string(&event).map_err(|err| -> Box<dyn 'static + Send + Error> { Box::new(err) })?.as_bytes())
             .map_err(|err| -> Box<dyn 'static + Send + Error> { Box::new(err) })

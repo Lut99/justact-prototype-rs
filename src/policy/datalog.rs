@@ -22,6 +22,8 @@ use datalog::parser::parse;
 use datalog::{ast, ir};
 use error_trace::toplevel;
 use thiserror::Error;
+
+use super::{PolicyDeserialize, PolicySerialize};
 mod justact {
     pub use ::justact::auxillary::{Affectored, Identifiable};
     pub use ::justact::collections::map::Map;
@@ -395,6 +397,19 @@ impl justact::Extractor<str, str, str> for Extractor {
         // OK, return the spec
         Ok(policy)
     }
+}
+
+
+
+impl<'a> PolicySerialize for ast::Spec<(&'a str, &'a str)> {
+    #[inline]
+    fn serialize(&self) -> String { format!("{self}") }
+}
+impl<'a> PolicyDeserialize<'a> for ast::Spec<(&'static str, &'a str)> {
+    type Error = datalog::parser::Error<'a, (&'static str, &'a str)>;
+
+    #[inline]
+    fn deserialize(raw: &'a str) -> Result<Self::Owned, Self::Error> { Ok(parse(("<raw>", raw))?) }
 }
 
 

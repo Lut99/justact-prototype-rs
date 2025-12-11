@@ -22,7 +22,7 @@ use error_trace::toplevel;
 use humanlog::{DebugMode, HumanLogger};
 use justact::runtime::Runtime as _;
 use justact_prototype::dataplane::StoreHandle;
-use justact_prototype::runtime::Runtime;
+use justact_prototype::runtime::System;
 use log::{debug, error, info};
 
 
@@ -86,7 +86,7 @@ fn main() {
     let sync = Consortium::new(Script::Section6_3_4);
 
     // Run the runtime!
-    let mut runtime = Runtime::new();
+    let mut runtime = System::new();
     if let Err(err) = runtime.run::<Agent>(agents, sync) {
         error!("{}", toplevel!(("Failed to run runtime"), err));
         std::process::exit(1);

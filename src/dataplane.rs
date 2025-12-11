@@ -211,12 +211,14 @@ impl StoreHandle {
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .lock()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Event::Data(EventData::Read {
-                who: who.into(),
-                id: Cow::Owned(id),
-                context,
-                contents: contents.as_ref().map(Vec::as_slice).map(Cow::Borrowed),
-            }))
+            .handle(Event::Data {
+                event: EventData::Read {
+                    who: who.into(),
+                    id: Cow::Owned(id),
+                    context,
+                    contents: contents.as_ref().map(Vec::as_slice).map(Cow::Borrowed),
+                },
+            })
             .map_err(|err| Error::TraceHandle { err })?;
 
         // OK, return the contents
@@ -258,13 +260,15 @@ impl StoreHandle {
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .lock()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Event::Data(EventData::Write {
-                who: Cow::Borrowed(who),
-                id: Cow::Borrowed(&id),
-                new: store.contains_key(&id),
-                context,
-                contents: Cow::Borrowed(&contents),
-            }))
+            .handle(Event::Data {
+                event: EventData::Write {
+                    who: Cow::Borrowed(who),
+                    id: Cow::Borrowed(&id),
+                    new: store.contains_key(&id),
+                    context,
+                    contents: Cow::Borrowed(&contents),
+                },
+            })
             .map_err(|err| Error::TraceHandle { err })?;
 
         // Perform the write and that's it

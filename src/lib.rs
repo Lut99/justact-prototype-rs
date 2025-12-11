@@ -14,6 +14,7 @@
 
 // Declare modules
 pub mod auditing;
+mod codegen;
 #[cfg(feature = "dataplane")]
 pub mod dataplane;
 pub mod events;
@@ -25,4 +26,4 @@ pub mod wire;
 
 // Use some of it
 pub use justact as spec;
-pub use runtime::{Error, Runtime};
+pub use runtime::{Error, System};

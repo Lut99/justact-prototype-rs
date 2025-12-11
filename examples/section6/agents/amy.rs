@@ -25,8 +25,8 @@ use justact::times::Times;
 use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
 pub use justact_prototype::events::Error;
 use justact_prototype::events::{EventHandler, ResultToError as _};
-use slick::GroundAtom;
 use slick::text::Text;
+use slick::{GroundAtom, Program};
 
 use super::{Script, create_action, create_message};
 
@@ -73,7 +73,7 @@ impl Identifiable for Amy {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, char), str, u64> for Amy {
+impl Agent<(String, u32), (String, char), Program, u64> for Amy {
     type Error = Error;
 
     #[track_caller]
@@ -83,7 +83,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
         A: Map<Agreement<SM, u64>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
-        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
+        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = Program>,
         SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // In the third example, where Amy crashes, she just dies from the get-go :/
@@ -104,10 +104,10 @@ impl Agent<(String, u32), (String, char), str, u64> for Amy {
             // Antonius' dataset.
             // She only does that once she knows the package exists. As such, she waits until she
             // sees: `(surf utils) ready.` before she publishes `amy 1`.
-            .on_truth(surf_utils, |view| view.stated.add(Recipient::All, create_message(1, ID, include_str!("../slick/amy_1.slick"))))?
+            .on_truth(surf_utils, |view| view.stated.add(Recipient::All, create_message(1, ID, slick::parse::program(include_str!("../slick/amy_1.slick")).unwrap().1)))?
             // Then she waits until the St. Antonius has executed her task. Once so, she publishes
             // her intent to download the result (`amy 2`).
-            .on_enacted((super::st_antonius::ID, 'b'), |view, _| view.stated.add(Recipient::All, create_message(2, ID, include_str!("../slick/amy_2.slick"))))?
+            .on_enacted((super::st_antonius::ID, 'b'), |view, _| view.stated.add(Recipient::All, create_message(2, ID, slick::parse::program(include_str!("../slick/amy_2.slick")).unwrap().1)))?
             // Finally, once she's gotten St. Antonius' authorisation to execute `amy 2`, she'll
             // collect the agreement and all statements (except Dan's) and enact it.
             .on_agreed_and_stated(

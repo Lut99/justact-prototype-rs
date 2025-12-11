@@ -25,6 +25,7 @@ use justact::times::Times;
 use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
 pub use justact_prototype::events::Error;
 use justact_prototype::events::{EventHandler, ResultToError as _};
+use slick::Program;
 
 use super::{Script, create_action, create_message};
 
@@ -69,7 +70,7 @@ impl Identifiable for Bob {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, char), str, u64> for Bob {
+impl Agent<(String, u32), (String, char), Program, u64> for Bob {
     type Error = Error;
 
     #[inline]
@@ -80,14 +81,14 @@ impl Agent<(String, u32), (String, char), str, u64> for Bob {
         A: Map<Agreement<SM, u64>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
-        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
+        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = Program>,
         SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         // Encode Bob's event handler script
         self.handler
             .handle_with_store(view, self.store.clone())
             // Bob publishes his workflow right from the start (`bob 1`).
-            .on_start(|view| view.stated.add(Recipient::All, create_message(1, ID, include_str!("../slick/bob_1.slick"))))?
+            .on_start(|view| view.stated.add(Recipient::All, create_message(1, ID, slick::parse::program(include_str!("../slick/bob_1.slick")).unwrap().1)))?
             // He can enact his workflow once the partners of it have confirmed their involvement.
             // Specifically, he's looking for confirmation that someone executes steps 2 and 3.
             .on_agreed_and_stated(

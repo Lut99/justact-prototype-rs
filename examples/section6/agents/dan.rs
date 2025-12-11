@@ -25,6 +25,7 @@ use justact::messages::ConstructableMessage;
 use justact::times::Times;
 pub use justact_prototype::events::Error;
 use justact_prototype::events::EventHandler;
+use slick::Program;
 
 use super::{Script, create_message};
 
@@ -66,7 +67,7 @@ impl Identifiable for Dan {
     #[inline]
     fn id(&self) -> &Self::Id { "dan" }
 }
-impl Agent<(String, u32), (String, char), str, u64> for Dan {
+impl Agent<(String, u32), (String, char), Program, u64> for Dan {
     type Error = Error;
 
     #[track_caller]
@@ -76,7 +77,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Dan {
         A: Map<Agreement<SM, u64>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
-        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
+        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = Program>,
         SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         self.handler.handle(view)
@@ -89,7 +90,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Dan {
                     (super::amy::ID, 1),
                     (super::st_antonius::ID, 1)
                 ],
-                |view, _, _| view.stated.add(Recipient::All, create_message(1, ID, include_str!("../slick/dan_1.slick")))
+                |view, _, _| view.stated.add(Recipient::All, create_message(1, ID, slick::parse::program(include_str!("../slick/dan_1.slick")).unwrap().1))
             )?
             .finish()
     }

@@ -33,13 +33,13 @@ mod justact {
 
 /***** TYPE ALIASES *****/
 /// Defines the set of enacted actions.
-pub type Actions = MapAsync<Action>;
+pub type Actions<P> = MapAsync<Action<P>>;
 
 /// Defines the set of agreements.
-pub type Agreements = HashMap<(String, u32), Agreement>;
+pub type Agreements<P> = HashMap<(String, u32), Agreement<P>>;
 
 /// Defines the set of stated messages.
-pub type Statements = MapAsync<Arc<Message>>;
+pub type Statements<P> = MapAsync<Arc<Message<P>>>;
 
 
 
@@ -65,17 +65,17 @@ trait Agented {
 
     fn agent_id(&self) -> &Self::AgentId;
 }
-impl Agented for Arc<Message> {
-    type AgentId = <Arc<Message> as justact::Authored>::AuthorId;
+impl<P: ?Sized + ToOwned> Agented for Arc<Message<P>> {
+    type AgentId = <Arc<Message<P>> as justact::Authored>::AuthorId;
 
     #[inline]
-    fn agent_id(&self) -> &Self::AgentId { <Arc<Message> as justact::Authored>::author_id(self) }
+    fn agent_id(&self) -> &Self::AgentId { <Arc<Message<P>> as justact::Authored>::author_id(self) }
 }
-impl Agented for Action {
-    type AgentId = <Action as justact::Actored>::ActorId;
+impl<P: ?Sized + ToOwned> Agented for Action<P> {
+    type AgentId = <Action<P> as justact::Actored>::ActorId;
 
     #[inline]
-    fn agent_id(&self) -> &Self::AgentId { <Action as justact::Actored>::actor_id(self) }
+    fn agent_id(&self) -> &Self::AgentId { <Action<P> as justact::Actored>::actor_id(self) }
 }
 
 

@@ -29,8 +29,8 @@ use justact_prototype::dataplane::{ScopedStoreHandle, StoreHandle};
 pub use justact_prototype::events::Error;
 use justact_prototype::events::{EventHandler, ResultToError as _};
 use justact_prototype::policy::slick::{Denotation as SlickDenotation, Extractor as SlickExtractor};
-use slick::GroundAtom;
 use slick::text::Text;
+use slick::{GroundAtom, Program};
 
 use super::{Script, create_action, create_message};
 
@@ -70,7 +70,7 @@ impl Identifiable for StAntonius {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
+impl Agent<(String, u32), (String, char), Program, u64> for StAntonius {
     type Error = Error;
 
     #[track_caller]
@@ -80,16 +80,16 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
         A: Map<Agreement<SM, u64>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
-        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
+        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = Program>,
         SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         let mut handler = self.handler.handle_with_store(view, self.store.clone())
             // The St. Antonius will always publish they have the `patients` dataset.
             .on_start(|view| -> Result<(), S::Error> {
-                view.stated.add(Recipient::All, create_message(1, ID, include_str!("../slick/st-antonius_1.slick")))?;
+                view.stated.add(Recipient::All, create_message(1, ID, slick::parse::program(include_str!("../slick/st-antonius_1.slick")).unwrap().1))?;
                 // Also do the one of example 4 if we need to
                 if self.script == Script::Section6_3_4 {
-                    view.stated.add(Recipient::All, create_message(5, ID, include_str!("../slick/st-antonius_5.slick")))?;
+                    view.stated.add(Recipient::All, create_message(5, ID, slick::parse::program(include_str!("../slick/st-antonius_5.slick")).unwrap().1))?;
                 }
                 Ok(())
             })?
@@ -113,7 +113,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
         if matches!(self.script, Script::Section6_3_1 | Script::Section6_3_3_ok | Script::Section6_3_3_crash) {
             handler = handler
                 // After Amy has put a task up for grabs, the St. Antonius will do it themselves.
-                .on_stated((super::amy::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(2, ID, include_str!("../slick/st-antonius_2.slick"))))?
+                .on_stated((super::amy::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(2, ID, slick::parse::program(include_str!("../slick/st-antonius_2.slick")).unwrap().1)))?
 
                 // Then the St. Antonius will enact its own statement.
                 .on_agreed_and_stated(
@@ -149,7 +149,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                 )?
 
                 // Eventually, Amy will have published her request to download. Which we authorise.
-                .on_stated((super::amy::ID, 2), |view, _| view.stated.add(Recipient::All, create_message(3, ID, include_str!("../slick/st-antonius_3.slick"))))?;
+                .on_stated((super::amy::ID, 2), |view, _| view.stated.add(Recipient::All, create_message(3, ID, slick::parse::program(include_str!("../slick/st-antonius_3.slick")).unwrap().1)))?;
         }
 
         /* Second & Third examples */
@@ -157,7 +157,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
             handler = handler
                 // After Bob has published their workflow, the St. Antonius elects to do task 3,
                 // giving SURF authorisation to do task 2 while at it.
-                .on_stated((super::bob::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(4, ID, include_str!("../slick/st-antonius_4.slick"))))?
+                .on_stated((super::bob::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(4, ID, slick::parse::program(include_str!("../slick/st-antonius_4.slick")).unwrap().1)))?
 
                 // Note that not just Bob needs to enact this action; St. Antonius needs to as well
                 // to justify their own read! (It's not a valid effect, otherwise.)
@@ -240,7 +240,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
                     .collect();
 
                     // Publish the new message to those agents only
-                    let msg: SM = create_message(6, ID, include_str!("../slick/st-antonius_6.slick"));
+                    let msg: SM = create_message(6, ID, slick::parse::program(include_str!("../slick/st-antonius_6.slick")).unwrap().1);
                     for trustee in trusted {
                         view.stated.add(Recipient::One(&trustee), msg.clone()).cast()?;
                     }
@@ -255,7 +255,7 @@ impl Agent<(String, u32), (String, char), str, u64> for StAntonius {
             handler = handler
                 // In the final example, we end with publishing some information useful for the
                 // second agreement!
-                .on_agreed((super::consortium::ID, 2), |view, _| view.stated.add(Recipient::All, create_message(7, ID, include_str!("../slick/st-antonius_7.slick"))))?;
+                .on_agreed((super::consortium::ID, 2), |view, _| view.stated.add(Recipient::All, create_message(7, ID, slick::parse::program(include_str!("../slick/st-antonius_7.slick")).unwrap().1)))?;
         }
 
         // Done!

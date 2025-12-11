@@ -28,6 +28,7 @@ pub use amy::Amy;
 pub use bob::Bob;
 pub use consortium::Consortium;
 pub use dan::Dan;
+use slick::Program;
 pub use st_antonius::StAntonius;
 pub use surf::Surf;
 use thiserror::Error;
@@ -181,7 +182,7 @@ impl justact::Identifiable for Agent {
         }
     }
 }
-impl justact::Agent<(String, u32), (String, char), str, u64> for Agent {
+impl justact::Agent<(String, u32), (String, char), Program, u64> for Agent {
     type Error = Error;
 
     #[inline]
@@ -191,7 +192,7 @@ impl justact::Agent<(String, u32), (String, char), str, u64> for Agent {
         A: justact::Map<justact::Agreement<SM, u64>>,
         S: justact::MapAsync<Self::Id, SM>,
         E: justact::MapAsync<Self::Id, SA>,
-        SM: justact::ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
+        SM: justact::ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = Program>,
         SA: justact::ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         match self {

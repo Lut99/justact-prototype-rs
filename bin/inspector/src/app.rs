@@ -24,7 +24,8 @@ use futures::{FutureExt as _, StreamExt as _};
 use justact::collections::Recipient;
 use justact::collections::map::InfallibleMap;
 use justact_prototype::auditing::{Audit, Event, EventControl, EventData, Permission};
-use justact_prototype::policy::slick::{GroundAtom, Text as SlickText};
+use justact_prototype::policy::PolicySerialize;
+use justact_prototype::policy::slick::{GroundAtom, Program, Text as SlickText};
 use justact_prototype::wire::Message;
 use log::{debug, error};
 use parking_lot::{Mutex, MutexGuard};
@@ -231,7 +232,7 @@ struct State {
     /// Which part of the window is focused.
     focus: Focus,
     /// The currently collected list of trace.
-    trace: Arc<Mutex<Vec<Event<'static>>>>,
+    trace: Arc<Mutex<Vec<Event<'static, Program>>>>,
     /// The currently selected trace.
     selected_event: ListState,
     /// The currently opened trace.
@@ -249,7 +250,7 @@ impl State {
     ///
     /// # Returns
     /// A new State reading for state'ing.
-    fn new(errors: Arc<Mutex<VecDeque<Error>>>, trace: Arc<Mutex<Vec<Event<'static>>>>, audit: Arc<Mutex<Audit>>) -> Self {
+    fn new(errors: Arc<Mutex<VecDeque<Error>>>, trace: Arc<Mutex<Vec<Event<'static, Program>>>>, audit: Arc<Mutex<Audit>>) -> Self {
         Self {
             errors,
             trace,
@@ -289,7 +290,7 @@ struct StateGuard<'s> {
     /// Which part of the window is focused.
     focus: &'s mut Focus,
     /// The currently collected list of trace.
-    trace: MutexGuard<'s, Vec<Event<'static>>>,
+    trace: MutexGuard<'s, Vec<Event<'static, Program>>>,
     /// The currently selected trace.
     selected_event: &'s mut ListState,
     /// The currently opened trace.
@@ -432,7 +433,7 @@ impl<'s> StateGuard<'s> {
             Layout::horizontal(if self.opened_event.is_some() { [Constraint::Fill(1); 2].as_slice() } else { [Constraint::Fill(1); 1].as_slice() })
                 .split(vrects[1]);
         let titles = self.trace.iter().enumerate().map(|(i, t)| match t {
-            Event::Control(t) => match t {
+            Event::Control { event } => match event {
                 EventControl::AddAgreement { agree } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
@@ -484,7 +485,7 @@ impl<'s> StateGuard<'s> {
                 },
             },
 
-            Event::Data(t) => match t {
+            Event::Data { event } => match event {
                 EventData::Read { who, id, context, contents } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
@@ -498,7 +499,7 @@ impl<'s> StateGuard<'s> {
                         self.trace
                             .iter()
                             .position(|e| {
-                                if let Event::Control(EventControl::EnactAction { action, .. }) = e {
+                                if let Event::Control { event: EventControl::EnactAction { action, .. } } = e {
                                     &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
                                 } else {
                                     false
@@ -534,7 +535,7 @@ impl<'s> StateGuard<'s> {
                         .trace
                         .iter()
                         .position(|e| {
-                            if let Event::Control(EventControl::EnactAction { action, .. }) = e {
+                            if let Event::Control { event: EventControl::EnactAction { action, .. } } = e {
                                 &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
                             } else {
                                 false
@@ -568,7 +569,7 @@ impl<'s> StateGuard<'s> {
 
         // Opened trace (right plane)
         if let Some(i) = self.opened_event {
-            let trace: &Event = &self.trace[*i];
+            let trace: &Event<Program> = &self.trace[*i];
 
             // Render the block
             let block = Block::bordered().title(format!("Event {}", *i + 1)).fg(right_color);
@@ -576,10 +577,11 @@ impl<'s> StateGuard<'s> {
 
             // Render the components
             match trace {
-                Event::Control(trace) => match trace {
+                Event::Control { event } => match event {
                     EventControl::AddAgreement { agree } => {
                         // Compute the size of the inner area of the scroll area
-                        let text = Text::from(agree.message.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
+                        let spayload = agree.message.payload.serialize();
+                        let text = Text::from(spayload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
                         let inner: Rect = Rect::new(0, 0, std::cmp::max(40, 2 + text.width() as u16), 4 + 2 + text.height() as u16);
 
                         // Render with the scroll area
@@ -751,7 +753,7 @@ impl<'s> StateGuard<'s> {
                                 // Render the messages part of it
                                 frame.render_widget(
                                     Paragraph::new({
-                                        let mut text = Text::from("Basis         : ");
+                                        let mut text = Text::from("Basis            : ");
                                         text.push_span(Span::from(format!("{} {}", action.basis.message.id.0, action.basis.message.id.1)).bold());
                                         text
                                     })
@@ -761,12 +763,12 @@ impl<'s> StateGuard<'s> {
                                 i += 1;
                                 frame.render_widget(
                                     Paragraph::new({
-                                        let mut text = Text::from("Justification : ");
-                                        if !action.justification.is_empty() {
-                                            let mut msgs: Vec<&Arc<Message>> = action.justification.iter().collect();
+                                        let mut text = Text::from("Extra              ");
+                                        if !action.extra.is_empty() {
+                                            let mut msgs: Vec<&Arc<Message<Program>>> = action.extra.iter().collect();
                                             msgs.sort_by(|lhs, rhs| lhs.id.0.cmp(&rhs.id.0).then_with(|| lhs.id.1.cmp(&rhs.id.1)));
                                             for (i, msg) in msgs.into_iter().enumerate() {
-                                                if i > 0 && i < action.justification.len() - 1 {
+                                                if i > 0 && i < action.extra.len() - 1 {
                                                     text.push_span(", ");
                                                 } else if i > 0 {
                                                     text.push_span(" and ");
@@ -867,7 +869,8 @@ impl<'s> StateGuard<'s> {
                     },
                     EventControl::StateMessage { who, to, msg } => {
                         // Compute the size of the total info area
-                        let text = Text::from(msg.payload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
+                        let spayload = msg.payload.serialize();
+                        let text = Text::from(spayload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
                         let inner: Rect = Rect::new(0, 0, std::cmp::max(40, 2 + text.width() as u16), 6 + 2 + text.height() as u16);
 
                         // Render in a scrolled area
@@ -937,7 +940,7 @@ impl<'s> StateGuard<'s> {
                     },
                 },
 
-                Event::Data(trace) => match trace {
+                Event::Data { event } => match event {
                     EventData::Read { who, id, context, contents } => {
                         // Prepare the layout
                         let scontents: Option<Cow<str>> = contents.as_ref().map(Cow::as_ref).map(String::from_utf8_lossy);
@@ -952,7 +955,7 @@ impl<'s> StateGuard<'s> {
                             .trace
                             .iter()
                             .position(|e| {
-                                if let Event::Control(EventControl::EnactAction { action, .. }) = e {
+                                if let Event::Control { event: EventControl::EnactAction { action, .. } } = e {
                                     &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
                                 } else {
                                     false
@@ -1055,7 +1058,7 @@ impl<'s> StateGuard<'s> {
                             .trace
                             .iter()
                             .position(|e| {
-                                if let Event::Control(EventControl::EnactAction { action, .. }) = e {
+                                if let Event::Control { event: EventControl::EnactAction { action, .. } } = e {
                                     &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
                                 } else {
                                     false
@@ -1337,7 +1340,7 @@ impl App {
     /// This function will only return once the given `input` closes.
     async fn trace_reader(
         errors: Arc<Mutex<VecDeque<Error>>>,
-        output: Arc<Mutex<Vec<Event<'static>>>>,
+        output: Arc<Mutex<Vec<Event<'static, Program>>>>,
         audit: Arc<Mutex<Audit>>,
         sender: Sender<()>,
         what: String,
@@ -1359,7 +1362,7 @@ impl App {
 
                     // Add the trace to the output
                     {
-                        let mut output: MutexGuard<Vec<Event>> = output.lock();
+                        let mut output: MutexGuard<Vec<Event<Program>>> = output.lock();
                         output.push(event);
                     }
 

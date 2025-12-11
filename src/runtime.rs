@@ -20,6 +20,7 @@ use log::debug;
 use thiserror::Error;
 
 use crate::io::TracingSet;
+use crate::policy::PolicySerialize;
 use crate::sets::{Actions, Agreements, Statements, Times};
 
 mod justact {
@@ -52,25 +53,25 @@ pub enum Error {
 
 /***** LIBRARY *****/
 /// Defines the prototype runtime that will do things in-memory.
-pub struct Runtime {
+pub struct System<P: ?Sized + ToOwned> {
     /// Defines the set of all times (and which are current).
     times:   TracingSet<Times>,
     /// Defines the set of all agreements.
-    agreed:  TracingSet<Agreements>,
+    agreed:  TracingSet<Agreements<P>>,
     /// Defines the set of all stated messages.
-    stated:  TracingSet<Statements>,
+    stated:  TracingSet<Statements<P>>,
     /// Defines the set of all enacted actions.
-    enacted: TracingSet<Actions>,
+    enacted: TracingSet<Actions<P>>,
 }
-impl Default for Runtime {
+impl<P: ?Sized + ToOwned> Default for System<P> {
     #[inline]
     fn default() -> Self { Self::new() }
 }
-impl Runtime {
-    /// Constructor for the Runtime that initializes it with nothing done yet.
+impl<P: ?Sized + ToOwned> System<P> {
+    /// Constructor for the System that initializes it with nothing done yet.
     ///
     /// # Returns
-    /// An empty Runtime, ready to [run](Runtime::run()).
+    /// An empty System, ready to [run](Runtime::run()).
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -81,12 +82,15 @@ impl Runtime {
         }
     }
 }
-impl justact::Runtime for Runtime {
+impl<P: ?Sized + PolicySerialize + ToOwned> justact::Runtime for System<P>
+where
+    P::Owned: Clone,
+{
     type MessageId = (String, u32);
     type ActionId = (String, char);
     type AgentId = str;
     type SynchronizerId = str;
-    type Payload = str;
+    type Payload = P;
     type Timestamp = u64;
     type Error = Error;
 

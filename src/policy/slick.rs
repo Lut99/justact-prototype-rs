@@ -18,11 +18,12 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FResult};
 use std::ops::{Deref, DerefMut};
 
-use nom::error::VerboseError;
 use slick::infer::Config;
 pub use slick::text::Text;
-pub use slick::{Atom, GroundAtom};
-use slick::{Program, Rule, RuleBody, parse};
+pub use slick::{Atom, GroundAtom, Program};
+use slick::{Rule, RuleBody};
+
+use super::{PolicyDeserialize, PolicySerialize};
 mod justact {
     pub use ::justact::auxillary::{Affectored, Identifiable};
     pub use ::justact::collections::map::Map;
@@ -474,14 +475,16 @@ impl Extractor {
     ///
     /// # Returns
     /// A new set of [`Extractor::Policy`].
-    pub fn extract_with_actor<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = (String, u32), AuthorId = str, Payload = str>>(
+    pub fn extract_with_actor<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = (String, u32), AuthorId = str, Payload = Program>>(
         &self,
         actor: &str,
         msgs: &'m impl justact::Map<M>,
-    ) -> Result<<Self as justact::Extractor<(String, u32), str, str>>::Policy<'m>, <Self as justact::Extractor<(String, u32), str, str>>::Error<'m>>
-    {
+    ) -> Result<
+        <Self as justact::Extractor<(String, u32), str, Program>>::Policy<'m>,
+        <Self as justact::Extractor<(String, u32), str, Program>>::Error<'m>,
+    > {
         // Get the policy
-        let mut pol = <Self as justact::Extractor<(String, u32), str, str>>::extract(self, msgs)?;
+        let mut pol = <Self as justact::Extractor<(String, u32), str, Program>>::extract(self, msgs)?;
 
         // Inject the actor fact
         pol.program.rules.push(Rule {
@@ -493,13 +496,13 @@ impl Extractor {
         Ok(pol)
     }
 }
-impl justact::Extractor<(String, u32), str, str> for Extractor {
+impl justact::Extractor<(String, u32), str, Program> for Extractor {
     type Policy<'m> = Policy;
     type Error<'m> = SyntaxError;
 
 
     #[inline]
-    fn extract<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = (String, u32), AuthorId = str, Payload = str>>(
+    fn extract<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = (String, u32), AuthorId = str, Payload = Program>>(
         &self,
         msgs: &'m impl justact::Map<M>,
     ) -> Result<Self::Policy<'m>, Self::Error<'m>> {
@@ -510,17 +513,7 @@ impl justact::Extractor<(String, u32), str, str> for Extractor {
         let mut policy = Policy::default();
         for msg in iter {
             // Parse as UTF-8
-            let snippet: &str = msg.payload();
-
-            // Parse as Slick
-            let mut msg_prog: Program = match parse::program(snippet) {
-                Ok((_, prog)) => prog,
-                Err(err) => {
-                    return Err(SyntaxError::Slick {
-                        err: err.map(|err| VerboseError { errors: err.errors.into_iter().map(|(src, err)| (src.to_string(), err)).collect() }),
-                    });
-                },
-            };
+            let mut msg_prog: Program = msg.payload().clone();
 
             // Remember to do the supposedly crucial preprocessing steps
             // FROM: <https://github.com/sirkibsirkib/slick/blob/f693f756b1425c5d0fea7a6fb520018cf9c30625/src/bin.rs#L40>
@@ -561,6 +554,25 @@ impl justact::Extractor<(String, u32), str, str> for Extractor {
 
 
 
+impl PolicySerialize for Program {
+    #[inline]
+    fn serialize(&self) -> String {
+        let mut res = String::new();
+        for rule in &self.rules {
+            res.push_str(&format!("{rule:?}.\n"));
+        }
+        res
+    }
+}
+impl<'a> PolicyDeserialize<'a> for Program {
+    type Error = nom::Err<nom::error::VerboseError<&'a str>>;
+
+    #[inline]
+    fn deserialize(raw: &'a str) -> Result<Self::Owned, Self::Error> { Ok(slick::parse::program(raw)?.1) }
+}
+
+
+
 
 
 /***** TESTS *****/
@@ -568,7 +580,7 @@ impl justact::Extractor<(String, u32), str, str> for Extractor {
 mod tests {
     use humanlog::{DebugMode, HumanLogger};
     use slick::infer::Config;
-    use slick::{Rule, RuleBody};
+    use slick::{Rule, RuleBody, parse};
 
     use super::*;
     mod justact {
@@ -598,7 +610,7 @@ mod tests {
     /// Implements a test message
     struct Message {
         id:      (String, u32),
-        payload: String,
+        payload: Program,
     }
     impl justact::Authored for Message {
         type AuthorId = str;
@@ -611,7 +623,7 @@ mod tests {
         fn id(&self) -> &Self::Id { &self.id }
     }
     impl justact::Message for Message {
-        type Payload = str;
+        type Payload = Program;
 
         #[inline]
         fn payload(&self) -> &Self::Payload { &self.payload }
@@ -639,8 +651,8 @@ mod tests {
 
     #[test]
     fn test_extract_policy_single() {
-        let msg = Message { id: ("amy".into(), 1), payload: "foo. bar if baz A.".into() };
-        let pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &msg).unwrap();
+        let msg = Message { id: ("amy".into(), 1), payload: parse::program("foo. bar if baz A.").unwrap().1 };
+        let pol = <Extractor as justact::Extractor<(String, u32), str, Program>>::extract(&Extractor, &msg).unwrap();
         assert_eq!(pol.program, Program {
             rules: vec![
                 Rule {
@@ -675,12 +687,12 @@ mod tests {
     #[test]
     fn test_extract_policy_multi() {
         // Construct a set of messages
-        let msg1 = Message { id: ("amy".into(), 1), payload: "foo.".into() };
-        let msg2 = Message { id: ("bob".into(), 1), payload: "bar :- baz(A).".into() };
+        let msg1 = Message { id: ("amy".into(), 1), payload: parse::program("foo.").unwrap().1 };
+        let msg2 = Message { id: ("bob".into(), 1), payload: parse::program("bar :- baz(A).").unwrap().1 };
         let msgs = justact::MessageSet::from_iter([msg1, msg2]);
 
         // Extract the policy from it
-        let mut pol = <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &msgs).unwrap();
+        let mut pol = <Extractor as justact::Extractor<(String, u32), str, Program>>::extract(&Extractor, &msgs).unwrap();
         // NOTE: MessageSet collects messages unordered, so the rules may be in any order
         // For consistency, we ensure they aren't.
         pol.rules.sort_by(|lhs, rhs| format!("{lhs:?}").cmp(&format!("{rhs:?}")));
@@ -857,10 +869,10 @@ mod tests {
     #[test]
     fn test_reflection() {
         // First, see if the derivation works.
-        let msg1 = Message { id: ("amy".into(), 1), payload: "foo. (bar foo) if foo. baz X if bar X.".into() };
-        let msg2 = Message { id: ("bob".into(), 1), payload: "qux X if baz X.".into() };
-        let pol =
-            <Extractor as justact::Extractor<(String, u32), str, str>>::extract(&Extractor, &justact::MessageSet::from_iter([msg1, msg2])).unwrap();
+        let msg1 = Message { id: ("amy".into(), 1), payload: parse::program("foo. (bar foo) if foo. baz X if bar X.").unwrap().1 };
+        let msg2 = Message { id: ("bob".into(), 1), payload: parse::program("qux X if baz X.").unwrap().1 };
+        let pol = <Extractor as justact::Extractor<(String, u32), str, Program>>::extract(&Extractor, &justact::MessageSet::from_iter([msg1, msg2]))
+            .unwrap();
         let den = <Policy as justact::Policy>::truths(&pol);
         assert_eq!(den, Denotation {
             truths:  [

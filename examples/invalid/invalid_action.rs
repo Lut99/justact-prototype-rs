@@ -30,7 +30,7 @@ use justact::collections::set::InfallibleSet as _;
 use justact::messages::{ConstructableMessage, MessageSet};
 use justact::runtime::Runtime as _;
 use justact::times::{Times, TimesSync};
-use justact_prototype::Runtime;
+use justact_prototype::System;
 use justact_prototype::auditing::Event;
 use justact_prototype::io::EventHandler;
 use log::{error, info};
@@ -41,7 +41,7 @@ use log::{error, info};
 pub struct StdoutEventHandler;
 impl EventHandler for StdoutEventHandler {
     #[inline]
-    fn handle(&mut self, event: Event) -> Result<(), Box<dyn 'static + Send + error::Error>> {
+    fn handle(&mut self, event: Event<str>) -> Result<(), Box<dyn 'static + Send + error::Error>> {
         println!("{}", serde_json::to_string(&event).map_err(|err| -> Box<dyn 'static + Send + error::Error> { Box::new(err) })?);
         Ok(())
     }
@@ -210,7 +210,7 @@ fn main() {
     justact_prototype::io::register_event_handler(StdoutEventHandler);
 
     // Run the runtime!
-    let mut runtime = Runtime::new();
+    let mut runtime = System::new();
     if let Err(err) = runtime.run([Dan], Environment) {
         error!("{}", toplevel!(("Failed to run runtime"), err));
         std::process::exit(1);

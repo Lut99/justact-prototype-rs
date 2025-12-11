@@ -14,6 +14,7 @@
 
 use std::task::Poll;
 
+use slick::Program;
 use justact::actions::ConstructableAction;
 use justact::actors::{Agent, View};
 use justact::agreements::Agreement;
@@ -65,7 +66,7 @@ impl Identifiable for Surf {
     #[inline]
     fn id(&self) -> &Self::Id { ID }
 }
-impl Agent<(String, u32), (String, char), str, u64> for Surf {
+impl Agent<(String, u32), (String, char), Program, u64> for Surf {
     type Error = Error;
 
     #[track_caller]
@@ -75,7 +76,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
         A: Map<Agreement<SM, u64>>,
         S: MapAsync<Self::Id, SM>,
         E: MapAsync<Self::Id, SA>,
-        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = str>,
+        SM: ConstructableMessage<Id = (String, u32), AuthorId = Self::Id, Payload = Program>,
         SA: ConstructableAction<Id = (String, char), ActorId = Self::Id, Message = SM, Timestamp = u64>,
     {
         let mut handler = self.handler.handle_with_store(view, self.store.clone());
@@ -84,7 +85,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
         if matches!(self.script, Script::Section6_3_1 | Script::Section6_3_2 | Script::Section6_3_3_ok | Script::Section6_3_3_crash) {
             handler = handler
                 // SURF publishes the existance of their utils package first.
-                .on_start(|view| view.stated.add(Recipient::All, create_message(1, ID, include_str!("../slick/surf_1.slick"))))?
+                .on_start(|view| view.stated.add(Recipient::All, create_message(1, ID, slick::parse::program(include_str!("../slick/surf_1.slick")).unwrap().1)))?
 
                 // Then, once it's published, it enacts it and writes the data.
                 .on_agreed_and_stated(
@@ -104,7 +105,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                 // Once SURF's package has been created, SURF notes eventually that Amy has a task
                 // to execute. They will publish they can do that for Amy; however, the St.
                 // Antonius elects themselves instead, so that's that.
-                .on_stated((super::amy::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(2, ID, include_str!("../slick/surf_2.slick"))))?;
+                .on_stated((super::amy::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(2, ID, slick::parse::program(include_str!("../slick/surf_2.slick")).unwrap().1)))?;
         }
 
         /* Second & Third examples */
@@ -112,7 +113,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
             handler = handler
                 // In the second example, SURF will suggest to do the second step once Bob
                 // publishes his workflow.
-                .on_stated((super::bob::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(3, ID, include_str!("../slick/surf_3.slick"))))?
+                .on_stated((super::bob::ID, 1), |view, _| view.stated.add(Recipient::All, create_message(3, ID, slick::parse::program(include_str!("../slick/surf_3.slick")).unwrap().1)))?
                 
                 // Note that not just Bob needs to enact this action; SURF needs to as well to
                 // justify their own read! (It's not a valid effect, otherwise.)
@@ -160,7 +161,7 @@ impl Agent<(String, u32), (String, char), str, u64> for Surf {
                     ],
                     |view, agree, mut just| -> Result<(), Error> {
                         // OK, now state our own execution...
-                        let msg: SM = create_message(4, ID, include_str!("../slick/surf_4.slick"));
+                        let msg: SM = create_message(4, ID, slick::parse::program(include_str!("../slick/surf_4.slick")).unwrap().1);
                         just.add(msg.clone());
                         view.stated.add(Recipient::All, msg).cast()?;
 

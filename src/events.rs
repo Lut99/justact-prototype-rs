@@ -27,7 +27,7 @@ use justact::collections::set::InfallibleSet;
 use justact::messages::Message;
 use justact::policies::{Extractor as _, Policy as _};
 use justact::times::Times;
-use slick::GroundAtom;
+use slick::{GroundAtom, Program};
 
 #[cfg(feature = "dataplane")]
 use crate::dataplane::ScopedStoreHandle;
@@ -398,7 +398,7 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
     pub fn on_truth<SM, ERR>(mut self, fact: GroundAtom, closure: impl FnOnce(&mut View<T, A, S, E>) -> Result<(), ERR>) -> Result<Self, Error>
     where
         S: Map<SM>,
-        SM: Message<Id = (String, u32), AuthorId = str, Payload = str>,
+        SM: Message<Id = (String, u32), AuthorId = str, Payload = Program>,
         ERR: 'static + Send + error::Error,
     {
         // Don't do anything if we've already handled it
@@ -452,7 +452,7 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
     ) -> Result<Self, Error>
     where
         S: Map<SM>,
-        SM: Message<Id = (String, u32), AuthorId = str, Payload = str>,
+        SM: Message<Id = (String, u32), AuthorId = str, Payload = Program>,
         ERR: 'static + Send + error::Error,
     {
         let facts: Vec<GroundAtom> = facts.into_iter().collect();
