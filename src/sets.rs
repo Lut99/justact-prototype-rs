@@ -13,33 +13,30 @@
 //
 
 use std::collections::{HashMap, HashSet};
-use std::convert::Infallible;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
 
 use thiserror::Error;
 
-use crate::wire::{Action, Agreement, Message};
+use crate::wire::{Action, Message};
 
 mod justact {
-    pub use ::justact::auxillary::{Actored, Authored, Identifiable};
+    pub use ::justact::auxillary::{Actored, Authored};
     pub use ::justact::collections::Recipient;
-    pub use ::justact::collections::map::{Map, MapAsync};
-    pub use ::justact::collections::set::{Set, SetSync};
-    pub use ::justact::times::{Times, TimesSync};
+    pub use ::justact::collections::set::{Set, SetAsync};
 }
 
 
 /***** TYPE ALIASES *****/
 /// Defines the set of enacted actions.
-pub type Actions<P> = MapAsync<Action<P>>;
+pub type Actions<P> = SetAsync<Action<P>>;
 
 /// Defines the set of agreements.
-pub type Agreements<P> = HashMap<(String, u32), Agreement<P>>;
+pub type Agreements<P> = HashSet<Arc<Message<P>>>;
 
 /// Defines the set of stated messages.
-pub type Statements<P> = MapAsync<Arc<Message<P>>>;
+pub type Statements<P> = SetAsync<Arc<Message<P>>>;
 
 
 
@@ -48,10 +45,10 @@ pub type Statements<P> = MapAsync<Arc<Message<P>>>;
 /***** ERRORS *****/
 /// Errors emitted by the [`MapAsync`]([`view`](MapAsyncView)).
 #[derive(Debug, Error)]
-pub enum Error<I> {
+pub enum Error<M> {
     /// An agent illegally stated a message out of their control.
     #[error("Agent {agent:?} stated message {message:?} without being its author or knowing it")]
-    IllegalStatement { agent: String, message: I },
+    IllegalStatement { agent: String, message: M },
 }
 
 
@@ -83,78 +80,16 @@ impl<P: ?Sized + ToOwned> Agented for Action<P> {
 
 
 /***** LIBRARY *****/
-/// Defines a _synchronous_ set for keeping track of the (current) time.
-pub struct Times {
-    /// The current time, if any.
-    current: Option<u64>,
-    /// The set of all known times.
-    times:   HashSet<u64>,
-}
-impl Times {
-    /// Creates a new, empty Times.
-    ///
-    /// # Returns
-    /// A completely empty Times ready to be used by agents.
-    #[inline]
-    pub fn new() -> Self { Self { current: None, times: HashSet::new() } }
-}
-impl justact::Set<u64> for Times {
-    type Error = Infallible;
-
-    #[inline]
-    fn get(&self, id: &u64) -> Result<Option<&u64>, Self::Error> { Ok(self.times.get(id)) }
-
-    #[inline]
-    fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s u64>, Self::Error>
-    where
-        u128: 's,
-    {
-        Ok(self.times.iter())
-    }
-
-    #[inline]
-    fn len(&self) -> Result<usize, Self::Error> { Ok(self.times.len()) }
-}
-impl justact::SetSync<u64> for Times {
-    #[inline]
-    fn add(&mut self, elem: u64) -> Result<bool, Self::Error> { Ok(self.times.insert(elem)) }
-}
-impl justact::Times for Times {
-    type Subset = Option<u64>;
-    type Timestamp = u64;
-
-    #[inline]
-    fn current(&self) -> Result<Self::Subset, Self::Error> { Ok(self.current) }
-}
-impl justact::TimesSync for Times {
-    #[inline]
-    fn add_current(&mut self, timestamp: Self::Timestamp) -> Result<bool, Self::Error> {
-        // Always add to the set
-        <Self as justact::SetSync<u64>>::add(self, timestamp)?;
-
-        // Then add it as the current timestamp, but only by checking if it exists already
-        let existed: bool = if let Some(current) = self.current { current == timestamp } else { false };
-        self.current = Some(timestamp);
-        Ok(existed)
-    }
-}
-
-
-
 /// A generic _asynchronous set_, which offers each agent a unique view to it.
-pub struct MapAsync<E>
-where
-    E: justact::Identifiable,
-    E::Id: ToOwned,
-{
+pub struct SetAsync<E> {
     /// A map of agents to what they see.
-    views: HashMap<String, HashMap<<E::Id as ToOwned>::Owned, E>>,
+    views: HashMap<String, HashSet<E>>,
 }
-impl<E> MapAsync<E>
-where
-    E: justact::Identifiable,
-    E::Id: ToOwned,
-{
+impl<E> Default for SetAsync<E> {
+    #[inline]
+    fn default() -> Self { Self::new() }
+}
+impl<E> SetAsync<E> {
     /// Creates a new, empty MapAsync.
     ///
     /// # Returns
@@ -178,7 +113,7 @@ where
         let id: String = id.into();
         let exists: bool = self.views.contains_key(&id);
         if !exists {
-            self.views.insert(id, HashMap::new());
+            self.views.insert(id, HashSet::new());
         }
         exists
     }
@@ -194,25 +129,17 @@ where
     /// # Panics
     /// This function will panic if no agent with ID `id` is [registered](AsyncMap::register()).
     #[inline]
-    pub fn scope<'s, 'i>(&'s mut self, id: &'i str) -> MapAsyncView<'s, 'i, E> { MapAsyncView::new(self, id) }
+    pub fn scope<'s, 'i>(&'s mut self, id: &'i str) -> SetAsyncView<'s, 'i, E> { SetAsyncView::new(self, id) }
 }
 
 /// Defines the view of a specific agent on an [`AsyncMap`].
-pub struct MapAsyncView<'s, 'i, E>
-where
-    E: justact::Identifiable,
-    E::Id: ToOwned,
-{
+pub struct SetAsyncView<'s, 'i, E> {
     /// The parent view.
-    parent: &'s mut MapAsync<E>,
+    parent: &'s mut SetAsync<E>,
     /// The identifier of the agent we're scoping to.
     pub(crate) id: &'i str,
 }
-impl<'s, 'i, E> MapAsyncView<'s, 'i, E>
-where
-    E: justact::Identifiable,
-    E::Id: ToOwned,
-{
+impl<'s, 'i, E> SetAsyncView<'s, 'i, E> {
     /// Constructor for the MapAsyncView.
     ///
     /// # Arguments
@@ -221,45 +148,29 @@ where
     ///
     /// # Returns
     /// A new MapAsyncView ready to show an agent what's it all about.
-    fn new(parent: &'s mut MapAsync<E>, id: &'i str) -> Self { Self { parent, id } }
+    fn new(parent: &'s mut SetAsync<E>, id: &'i str) -> Self { Self { parent, id } }
 }
-impl<'s, 'i, E> justact::Map<E> for MapAsyncView<'s, 'i, E>
-where
-    E: justact::Identifiable,
-    E::Id: ToOwned,
-    <E::Id as ToOwned>::Owned: 'static + Send + Debug + Eq + Hash,
-{
-    type Error = Error<<E::Id as ToOwned>::Owned>;
+impl<'s, 'i, E: 'static + Debug + Eq + Hash + Send> justact::Set<E> for SetAsyncView<'s, 'i, E> {
+    type Error = Error<E>;
 
-    fn get(&self, id: &<E as justact::Identifiable>::Id) -> Result<Option<&E>, Self::Error>
-    where
-        E: justact::Identifiable,
-    {
-        Ok(self.parent.views.get(self.id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {:?}", self.id)).get(id))
+    fn get(&self, elem: &E) -> Result<Option<&E>, Self::Error> {
+        Ok(self.parent.views.get(self.id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {:?}", self.id)).get(elem))
     }
 
     fn iter<'a>(&'a self) -> Result<impl Iterator<Item = &'a E>, Self::Error>
     where
-        E: 'a + justact::Identifiable,
+        E: 'a,
     {
-        Ok(self.parent.views.get(self.id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {:?}", self.id)).values())
+        Ok(self.parent.views.get(self.id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {:?}", self.id)).iter())
     }
 
     fn len(&self) -> Result<usize, Self::Error> {
         Ok(self.parent.views.get(self.id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {:?}", self.id)).len())
     }
 }
-impl<'s, 'i, E> justact::MapAsync<str, E> for MapAsyncView<'s, 'i, E>
-where
-    E: Clone + justact::Identifiable + Agented<AgentId = str>,
-    E::Id: ToOwned,
-    <E::Id as ToOwned>::Owned: 'static + Send + Debug + Eq + Hash,
-{
+impl<'s, 'i, E: 'static + Agented<AgentId = str> + Clone + Debug + Eq + Hash + Send> justact::SetAsync<str, E> for SetAsyncView<'s, 'i, E> {
     #[inline]
-    fn add(&mut self, selector: justact::Recipient<&str>, elem: E) -> Result<(), Self::Error>
-    where
-        E: justact::Identifiable,
-    {
+    fn add(&mut self, selector: justact::Recipient<&str>, elem: E) -> Result<(), Self::Error> {
         // Check if this agent may publish an element with associated author/actor
         // This is OK if:
         //  - They are the author/actor; or
@@ -270,11 +181,11 @@ where
                 .views
                 .get(self.id)
                 .unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {:?}", self.id))
-                .values()
-                .find(|e| elem.id() == e.id())
+                .iter()
+                .find(|e| &elem == *e)
                 .is_none()
         {
-            return Err(Error::IllegalStatement { agent: self.id.into(), message: elem.id().to_owned() });
+            return Err(Error::IllegalStatement { agent: self.id.into(), message: elem });
         }
 
         // Then add the message to the selected agent's view
@@ -282,18 +193,13 @@ where
         //       are `Arc`'d in our prototype.
         match selector {
             justact::Recipient::All => {
-                let id = elem.id();
                 for view in self.parent.views.values_mut() {
-                    view.insert(id.to_owned(), elem.clone());
+                    view.insert(elem.clone());
                 }
                 Ok(())
             },
             justact::Recipient::One(id) => {
-                self.parent
-                    .views
-                    .get_mut(id)
-                    .unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {id:?}"))
-                    .insert(elem.id().to_owned(), elem);
+                self.parent.views.get_mut(id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {id:?}")).insert(elem);
                 Ok(())
             },
         }

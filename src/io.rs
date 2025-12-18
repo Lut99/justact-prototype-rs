@@ -18,19 +18,18 @@
 use std::borrow::Cow;
 use std::error;
 use std::fmt::{Debug, Display, Formatter, Result as FResult};
+use std::hash::Hash;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::auditing::{Event, EventControl};
 use crate::policy::PolicySerialize;
-use crate::sets::{Agreements, MapAsync, MapAsyncView, Times};
-use crate::wire::{Action, Agreement, Message, serialize_agreement};
+use crate::sets::{Agreements, SetAsync, SetAsyncView};
+use crate::wire::{Action, Message};
 
 mod justact {
     pub use ::justact::auxillary::Identifiable;
     pub use ::justact::collections::Recipient;
-    pub use ::justact::collections::map::{Map, MapAsync, MapSync};
-    pub use ::justact::collections::set::{Set, SetSync};
-    pub use ::justact::times::{Times, TimesSync};
+    pub use ::justact::collections::set::{Set, SetAsync, SetSync};
 }
 
 
@@ -114,7 +113,7 @@ pub fn register_event_handler(handler: impl EventHandler) { let _ = EVENT_HANDLE
 /// Defines a catch-all wrapper for the sets in the prototype such that they produce nice traces.
 pub struct TracingSet<T>(pub T);
 // native impls
-impl<E> TracingSet<MapAsync<E>>
+impl<E> TracingSet<SetAsync<E>>
 where
     E: justact::Identifiable,
     E::Id: ToOwned,
@@ -140,28 +139,25 @@ where
     /// - `id`: The identifier of the agent to return the view for.
     ///
     /// # Returns
-    /// A new [`MapAsyncView`] scoped to the agent with the given `id`.
+    /// A new [`SetAsyncView`] scoped to the agent with the given `id`.
     ///
     /// # Panics
-    /// This function will panic if no agent with ID `id` is [registered](AsyncMap::register()).
+    /// This function will panic if no agent with ID `id` is [registered](AsyncSet::register()).
     #[inline]
-    pub fn scope<'s, 'i>(&'s mut self, id: &'i str) -> TracingSet<MapAsyncView<'s, 'i, E>> { TracingSet(self.0.scope(id)) }
+    pub fn scope<'s, 'i>(&'s mut self, id: &'i str) -> TracingSet<SetAsyncView<'s, 'i, E>> { TracingSet(self.0.scope(id)) }
 }
 // justact impls
-impl<'s, 'i, P: ?Sized + ToOwned> justact::Map<Action<P>> for TracingSet<MapAsyncView<'s, 'i, Action<P>>>
+impl<'s, 'i, P: ?Sized + ToOwned> justact::Set<Action<P>> for TracingSet<SetAsyncView<'s, 'i, Action<P>>>
 where
+    P: 'static,
+    P::Owned: 'static + Debug + Eq + Hash + Send + Sync,
     Action<P>: justact::Identifiable<Id = (String, char)>,
 {
-    type Error = Error<<MapAsyncView<'s, 'i, Action<P>> as justact::Map<Action<P>>>::Error>;
+    type Error = Error<<SetAsyncView<'s, 'i, Action<P>> as justact::Set<Action<P>>>::Error>;
 
     #[inline]
-    fn contains_key(&self, id: &<Action<P> as justact::Identifiable>::Id) -> Result<bool, Self::Error> {
-        <MapAsyncView<'s, 'i, Action<P>> as justact::Map<Action<P>>>::contains_key(&self.0, id).map_err(Error::Inner)
-    }
-
-    #[inline]
-    fn get(&self, id: &<Action<P> as justact::Identifiable>::Id) -> Result<Option<&Action<P>>, Self::Error> {
-        <MapAsyncView<'s, 'i, Action<P>> as justact::Map<Action<P>>>::get(&self.0, id).map_err(Error::Inner)
+    fn get(&self, elem: &Action<P>) -> Result<Option<&Action<P>>, Self::Error> {
+        <SetAsyncView<'s, 'i, Action<P>> as justact::Set<Action<P>>>::get(&self.0, elem).map_err(Error::Inner)
     }
 
     #[inline]
@@ -169,20 +165,21 @@ where
     where
         Action<P>: 'a,
     {
-        <MapAsyncView<'s, 'i, Action<P>> as justact::Map<Action<P>>>::iter(&self.0).map_err(Error::Inner)
+        <SetAsyncView<'s, 'i, Action<P>> as justact::Set<Action<P>>>::iter(&self.0).map_err(Error::Inner)
     }
 
     #[inline]
-    fn len(&self) -> Result<usize, Self::Error> { <MapAsyncView<'s, 'i, Action<P>> as justact::Map<Action<P>>>::len(&self.0).map_err(Error::Inner) }
+    fn len(&self) -> Result<usize, Self::Error> { <SetAsyncView<'s, 'i, Action<P>> as justact::Set<Action<P>>>::len(&self.0).map_err(Error::Inner) }
 }
-impl<'s, 'i, P: ?Sized + PolicySerialize + ToOwned> justact::MapAsync<str, Action<P>> for TracingSet<MapAsyncView<'s, 'i, Action<P>>>
+impl<'s, 'i, P: ?Sized + PolicySerialize + ToOwned> justact::SetAsync<str, Action<P>> for TracingSet<SetAsyncView<'s, 'i, Action<P>>>
 where
-    P::Owned: Clone,
+    P: 'static,
+    P::Owned: 'static + Clone + Debug + Eq + Hash + Send + Sync,
     Action<P>: justact::Identifiable<Id = (String, char)>,
 {
     #[inline]
     fn add(&mut self, selector: justact::Recipient<&str>, elem: Action<P>) -> Result<(), Self::Error> {
-        <MapAsyncView<'s, 'i, Action<P>> as justact::MapAsync<str, Action<P>>>::add(&mut self.0, selector.clone(), elem.clone())
+        <SetAsyncView<'s, 'i, Action<P>> as justact::SetAsync<str, Action<P>>>::add(&mut self.0, selector.clone(), elem.clone())
             .map_err(Error::Inner)?;
         EVENT_HANDLER
             .get()
@@ -200,64 +197,58 @@ where
         Ok(())
     }
 }
-impl<P: ?Sized + ToOwned> justact::Map<Agreement<P>> for TracingSet<Agreements<P>>
+impl<P: ?Sized + ToOwned> justact::Set<Arc<Message<P>>> for TracingSet<Agreements<P>>
 where
-    Agreement<P>: justact::Identifiable<Id = (String, u32)>,
+    P: 'static,
+    P::Owned: 'static + Debug + Eq + Hash + Send + Sync,
 {
-    type Error = Error<<Agreements<P> as justact::Map<Agreement<P>>>::Error>;
+    type Error = Error<<Agreements<P> as justact::Set<Arc<Message<P>>>>::Error>;
 
     #[inline]
-    fn contains_key(&self, id: &<Agreement<P> as justact::Identifiable>::Id) -> Result<bool, Self::Error> {
-        <Agreements<P> as justact::Map<Agreement<P>>>::contains_key(&self.0, id).map_err(Error::Inner)
+    fn get(&self, elem: &Arc<Message<P>>) -> Result<Option<&Arc<Message<P>>>, Self::Error> {
+        <Agreements<P> as justact::Set<Arc<Message<P>>>>::get(&self.0, elem).map_err(Error::Inner)
     }
 
     #[inline]
-    fn get(&self, id: &<Agreement<P> as justact::Identifiable>::Id) -> Result<Option<&Agreement<P>>, Self::Error> {
-        <Agreements<P> as justact::Map<Agreement<P>>>::get(&self.0, id).map_err(Error::Inner)
-    }
-
-    #[inline]
-    fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s Agreement<P>>, Self::Error>
+    fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s Arc<Message<P>>>, Self::Error>
     where
-        Agreement<P>: 's,
+        Arc<Message<P>>: 's,
     {
-        <Agreements<P> as justact::Map<Agreement<P>>>::iter(&self.0).map_err(Error::Inner)
+        <Agreements<P> as justact::Set<Arc<Message<P>>>>::iter(&self.0).map_err(Error::Inner)
     }
 
     #[inline]
-    fn len(&self) -> Result<usize, Self::Error> { <Agreements<P> as justact::Map<Agreement<P>>>::len(&self.0).map_err(Error::Inner) }
+    fn len(&self) -> Result<usize, Self::Error> { <Agreements<P> as justact::Set<Arc<Message<P>>>>::len(&self.0).map_err(Error::Inner) }
 }
-impl<P: ?Sized + PolicySerialize + ToOwned> justact::MapSync<Agreement<P>> for TracingSet<Agreements<P>>
+impl<P: ?Sized + PolicySerialize + ToOwned> justact::SetSync<Arc<Message<P>>> for TracingSet<Agreements<P>>
 where
-    Agreement<P>: justact::Identifiable<Id = (String, u32)>,
+    P: 'static,
+    P::Owned: 'static + Debug + Eq + Hash + Send + Sync,
 {
     #[inline]
-    fn add(&mut self, elem: Agreement<P>) -> Result<Option<Agreement<P>>, Self::Error> {
-        let existing = <Agreements<P> as justact::MapSync<Agreement<P>>>::add(&mut self.0, elem.clone()).map_err(Error::Inner)?;
+    fn add(&mut self, elem: Arc<Message<P>>) -> Result<bool, Self::Error> {
+        let existing = <Agreements<P> as justact::SetSync<Arc<Message<P>>>>::add(&mut self.0, elem.clone()).map_err(Error::Inner)?;
         EVENT_HANDLER
             .get()
             .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
             .lock()
             .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Event::Control { event: EventControl::AddAgreement { agree: serialize_agreement(&elem) } })
+            .handle(Event::Control { event: EventControl::AddAgreement { agree: Arc::new(elem.serialize()) } })
             .map_err(|err| Error::EventHandle { err })?;
         Ok(existing)
     }
 }
-impl<'s, 'i, P: ?Sized + ToOwned> justact::Map<Arc<Message<P>>> for TracingSet<MapAsyncView<'s, 'i, Arc<Message<P>>>>
+impl<'s, 'i, P: ?Sized + ToOwned> justact::Set<Arc<Message<P>>> for TracingSet<SetAsyncView<'s, 'i, Arc<Message<P>>>>
 where
+    P: 'static,
+    P::Owned: 'static + Debug + Eq + Hash + Send + Sync,
     Arc<Message<P>>: justact::Identifiable<Id = (String, u32)>,
 {
-    type Error = Error<<MapAsyncView<'s, 'i, Arc<Message<P>>> as justact::Map<Arc<Message<P>>>>::Error>;
+    type Error = Error<<SetAsyncView<'s, 'i, Arc<Message<P>>> as justact::Set<Arc<Message<P>>>>::Error>;
 
     #[inline]
-    fn contains_key(&self, id: &<Arc<Message<P>> as justact::Identifiable>::Id) -> Result<bool, Self::Error> {
-        <MapAsyncView<'s, 'i, Arc<Message<P>>> as justact::Map<Arc<Message<P>>>>::contains_key(&self.0, id).map_err(Error::Inner)
-    }
-
-    #[inline]
-    fn get(&self, id: &<Arc<Message<P>> as justact::Identifiable>::Id) -> Result<Option<&Arc<Message<P>>>, Self::Error> {
-        <MapAsyncView<'s, 'i, Arc<Message<P>>> as justact::Map<Arc<Message<P>>>>::get(&self.0, id).map_err(Error::Inner)
+    fn get(&self, elem: &Arc<Message<P>>) -> Result<Option<&Arc<Message<P>>>, Self::Error> {
+        <SetAsyncView<'s, 'i, Arc<Message<P>>> as justact::Set<Arc<Message<P>>>>::get(&self.0, elem).map_err(Error::Inner)
     }
 
     #[inline]
@@ -265,21 +256,23 @@ where
     where
         Arc<Message<P>>: 'a + justact::Identifiable,
     {
-        <MapAsyncView<'s, 'i, Arc<Message<P>>> as justact::Map<Arc<Message<P>>>>::iter(&self.0).map_err(Error::Inner)
+        <SetAsyncView<'s, 'i, Arc<Message<P>>> as justact::Set<Arc<Message<P>>>>::iter(&self.0).map_err(Error::Inner)
     }
 
     #[inline]
     fn len(&self) -> Result<usize, Self::Error> {
-        <MapAsyncView<'s, 'i, Arc<Message<P>>> as justact::Map<Arc<Message<P>>>>::len(&self.0).map_err(Error::Inner)
+        <SetAsyncView<'s, 'i, Arc<Message<P>>> as justact::Set<Arc<Message<P>>>>::len(&self.0).map_err(Error::Inner)
     }
 }
-impl<'s, 'i, P: ?Sized + PolicySerialize + ToOwned> justact::MapAsync<str, Arc<Message<P>>> for TracingSet<MapAsyncView<'s, 'i, Arc<Message<P>>>>
+impl<'s, 'i, P: ?Sized + PolicySerialize + ToOwned> justact::SetAsync<str, Arc<Message<P>>> for TracingSet<SetAsyncView<'s, 'i, Arc<Message<P>>>>
 where
+    P: 'static,
+    P::Owned: 'static + Debug + Eq + Hash + Send + Sync,
     Arc<Message<P>>: justact::Identifiable<Id = (String, u32)>,
 {
     #[inline]
     fn add(&mut self, selector: justact::Recipient<&str>, elem: Arc<Message<P>>) -> Result<(), Self::Error> {
-        <MapAsyncView<'s, 'i, Arc<Message<P>>> as justact::MapAsync<str, Arc<Message<P>>>>::add(&mut self.0, selector, elem.clone())
+        <SetAsyncView<'s, 'i, Arc<Message<P>>> as justact::SetAsync<str, Arc<Message<P>>>>::add(&mut self.0, selector, elem.clone())
             .map_err(Error::Inner)?;
         EVENT_HANDLER
             .get()
@@ -295,56 +288,5 @@ where
             })
             .map_err(|err| Error::EventHandle { err })?;
         Ok(())
-    }
-}
-impl justact::Set<<Times as justact::Times>::Timestamp> for TracingSet<Times> {
-    type Error = Error<<Times as justact::Set<<Times as justact::Times>::Timestamp>>::Error>;
-
-    #[inline]
-    fn contains(&self, elem: &<Times as justact::Times>::Timestamp) -> Result<bool, Self::Error> {
-        <Times as justact::Set<<Times as justact::Times>::Timestamp>>::contains(&self.0, elem).map_err(Error::Inner)
-    }
-
-    #[inline]
-    fn get(&self, elem: &<Times as justact::Times>::Timestamp) -> Result<Option<&<Times as justact::Times>::Timestamp>, Self::Error> {
-        <Times as justact::Set<<Times as justact::Times>::Timestamp>>::get(&self.0, elem).map_err(Error::Inner)
-    }
-
-    #[inline]
-    fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s <Times as justact::Times>::Timestamp>, Self::Error>
-    where
-        <Times as justact::Times>::Timestamp: 's,
-    {
-        <Times as justact::Set<<Times as justact::Times>::Timestamp>>::iter(&self.0).map_err(Error::Inner)
-    }
-
-    #[inline]
-    fn len(&self) -> Result<usize, Self::Error> { <Times as justact::Set<<Times as justact::Times>::Timestamp>>::len(&self.0).map_err(Error::Inner) }
-}
-impl justact::SetSync<<Times as justact::Times>::Timestamp> for TracingSet<Times> {
-    #[inline]
-    fn add(&mut self, elem: <Times as justact::Times>::Timestamp) -> Result<bool, Self::Error> {
-        <Times as justact::SetSync<<Times as justact::Times>::Timestamp>>::add(&mut self.0, elem).map_err(Error::Inner)
-    }
-}
-impl justact::Times for TracingSet<Times> {
-    type Subset = <Times as justact::Times>::Subset;
-    type Timestamp = <Times as justact::Times>::Timestamp;
-
-    #[inline]
-    fn current(&self) -> Result<Self::Subset, Self::Error> { <Times as justact::Times>::current(&self.0).map_err(Error::Inner) }
-}
-impl justact::TimesSync for TracingSet<Times> {
-    #[inline]
-    fn add_current(&mut self, timestamp: Self::Timestamp) -> Result<bool, Self::Error> {
-        let existing = <Times as justact::TimesSync>::add_current(&mut self.0, timestamp).map_err(Error::Inner)?;
-        EVENT_HANDLER
-            .get()
-            .unwrap_or_else(|| panic!("No trace handler was registered; call `register_trace_handler()` first"))
-            .lock()
-            .unwrap_or_else(|err| panic!("Lock poisoned: {err}"))
-            .handle(Event::Control { event: EventControl::AdvanceTime { timestamp } })
-            .map_err(|err| Error::EventHandle { err })?;
-        Ok(existing)
     }
 }

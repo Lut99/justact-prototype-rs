@@ -475,16 +475,13 @@ impl Extractor {
     ///
     /// # Returns
     /// A new set of [`Extractor::Policy`].
-    pub fn extract_with_actor<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = (String, u32), AuthorId = str, Payload = Program>>(
+    pub fn extract_with_actor<'a, M: justact::Message<AuthorId = str, Payload = Program>>(
         &self,
         actor: &str,
-        msgs: &'m impl justact::Map<M>,
-    ) -> Result<
-        <Self as justact::Extractor<(String, u32), str, Program>>::Policy<'m>,
-        <Self as justact::Extractor<(String, u32), str, Program>>::Error<'m>,
-    > {
+        msgs: &'a impl justact::Set<M>,
+    ) -> Result<<Self as justact::Extractor<str, Program>>::Policy<'a>, <Self as justact::Extractor<str, Program>>::Error<'a>> {
         // Get the policy
-        let mut pol = <Self as justact::Extractor<(String, u32), str, Program>>::extract(self, msgs)?;
+        let mut pol = <Self as justact::Extractor<str, Program>>::extract(self, msgs)?;
 
         // Inject the actor fact
         pol.program.rules.push(Rule {
@@ -496,16 +493,16 @@ impl Extractor {
         Ok(pol)
     }
 }
-impl justact::Extractor<(String, u32), str, Program> for Extractor {
-    type Policy<'m> = Policy;
-    type Error<'m> = SyntaxError;
+impl justact::Extractor<str, Program> for Extractor {
+    type Policy<'a> = Policy;
+    type Error<'a> = SyntaxError;
 
 
     #[inline]
-    fn extract<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = (String, u32), AuthorId = str, Payload = Program>>(
+    fn extract<'a, M: justact::Message<AuthorId = str, Payload = Program>>(
         &self,
-        msgs: &'m impl justact::Map<M>,
-    ) -> Result<Self::Policy<'m>, Self::Error<'m>> {
+        msgs: &'a impl justact::Set<M>,
+    ) -> Result<Self::Policy<'a>, Self::Error<'a>> {
         // Attempt to iterate over the messages
         let iter = msgs.iter().map_err(|err| SyntaxError::Iter { what: std::any::type_name::<M>(), err: Box::new(err) })?;
 
@@ -608,19 +605,15 @@ mod tests {
     fn make_flat_ground_atom_str(s: &str) -> GroundAtom { parse::ground_atom(s).unwrap().1 }
 
     /// Implements a test message
+    #[derive(Eq, Hash, PartialEq)]
     struct Message {
-        id:      (String, u32),
-        payload: Program,
+        author_id: String,
+        payload:   Program,
     }
     impl justact::Authored for Message {
         type AuthorId = str;
         #[inline]
-        fn author_id(&self) -> &Self::AuthorId { &self.id.0 }
-    }
-    impl justact::Identifiable for Message {
-        type Id = (String, u32);
-        #[inline]
-        fn id(&self) -> &Self::Id { &self.id }
+        fn author_id(&self) -> &Self::AuthorId { &self.author_id }
     }
     impl justact::Message for Message {
         type Payload = Program;
@@ -628,19 +621,14 @@ mod tests {
         #[inline]
         fn payload(&self) -> &Self::Payload { &self.payload }
     }
-    impl justact::Map<Self> for Message {
+    impl justact::Set<Self> for Message {
         type Error = Infallible;
         #[inline]
-        fn get(&self, id: &<Self as justact::Identifiable>::Id) -> Result<Option<&Self>, Self::Error>
-        where
-            Self: justact::Identifiable,
-        {
-            if &self.id == id { Ok(Some(self)) } else { Ok(None) }
-        }
+        fn get(&self, elem: &Self) -> Result<Option<&Self>, Self::Error> { if self == elem { Ok(Some(self)) } else { Ok(None) } }
         #[inline]
         fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s Self>, Self::Error>
         where
-            Self: 's + justact::Identifiable,
+            Self: 's,
         {
             Ok(Some(self).into_iter())
         }
@@ -651,8 +639,8 @@ mod tests {
 
     #[test]
     fn test_extract_policy_single() {
-        let msg = Message { id: ("amy".into(), 1), payload: parse::program("foo. bar if baz A.").unwrap().1 };
-        let pol = <Extractor as justact::Extractor<(String, u32), str, Program>>::extract(&Extractor, &msg).unwrap();
+        let msg = Message { author_id: "amy".into(), payload: parse::program("foo. bar if baz A.").unwrap().1 };
+        let pol = <Extractor as justact::Extractor<str, Program>>::extract(&Extractor, &msg).unwrap();
         assert_eq!(pol.program, Program {
             rules: vec![
                 Rule {
@@ -687,12 +675,12 @@ mod tests {
     #[test]
     fn test_extract_policy_multi() {
         // Construct a set of messages
-        let msg1 = Message { id: ("amy".into(), 1), payload: parse::program("foo.").unwrap().1 };
-        let msg2 = Message { id: ("bob".into(), 1), payload: parse::program("bar :- baz(A).").unwrap().1 };
+        let msg1 = Message { author_id: "amy".into(), payload: parse::program("foo.").unwrap().1 };
+        let msg2 = Message { author_id: "bob".into(), payload: parse::program("bar :- baz(A).").unwrap().1 };
         let msgs = justact::MessageSet::from_iter([msg1, msg2]);
 
         // Extract the policy from it
-        let mut pol = <Extractor as justact::Extractor<(String, u32), str, Program>>::extract(&Extractor, &msgs).unwrap();
+        let mut pol = <Extractor as justact::Extractor<str, Program>>::extract(&Extractor, &msgs).unwrap();
         // NOTE: MessageSet collects messages unordered, so the rules may be in any order
         // For consistency, we ensure they aren't.
         pol.rules.sort_by(|lhs, rhs| format!("{lhs:?}").cmp(&format!("{rhs:?}")));
@@ -869,10 +857,9 @@ mod tests {
     #[test]
     fn test_reflection() {
         // First, see if the derivation works.
-        let msg1 = Message { id: ("amy".into(), 1), payload: parse::program("foo. (bar foo) if foo. baz X if bar X.").unwrap().1 };
-        let msg2 = Message { id: ("bob".into(), 1), payload: parse::program("qux X if baz X.").unwrap().1 };
-        let pol = <Extractor as justact::Extractor<(String, u32), str, Program>>::extract(&Extractor, &justact::MessageSet::from_iter([msg1, msg2]))
-            .unwrap();
+        let msg1 = Message { author_id: "amy".into(), payload: parse::program("foo. (bar foo) if foo. baz X if bar X.").unwrap().1 };
+        let msg2 = Message { author_id: "bob".into(), payload: parse::program("qux X if baz X.").unwrap().1 };
+        let pol = <Extractor as justact::Extractor<str, Program>>::extract(&Extractor, &justact::MessageSet::from_iter([msg1, msg2])).unwrap();
         let den = <Policy as justact::Policy>::truths(&pol);
         assert_eq!(den, Denotation {
             truths:  [

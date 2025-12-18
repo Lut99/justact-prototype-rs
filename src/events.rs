@@ -19,14 +19,12 @@ use std::fmt::{Display, Formatter, Result as FResult};
 use std::task::Poll;
 
 use justact::actors::View;
-use justact::agreements::Agreement;
 use justact::auxillary::Identifiable;
 use justact::collections::Singleton;
 use justact::collections::map::Map;
 use justact::collections::set::InfallibleSet;
 use justact::messages::Message;
 use justact::policies::{Extractor as _, Policy as _};
-use justact::times::Times;
 use slick::{GroundAtom, Program};
 
 #[cfg(feature = "dataplane")]
@@ -96,8 +94,6 @@ pub struct EventHandler {
     on_truths_handled: HashSet<Vec<GroundAtom>>,
     /// The set of enactments that we've already handled.
     on_enacted_handled: HashSet<(String, char)>,
-    /// The set of times has been updated with a specific current one.
-    on_tick_to_handled: HashSet<u64>,
     /// The set of data creations (writes) we've already handled.
     #[cfg(feature = "dataplane")]
     on_data_created_handled: HashSet<((String, String), String)>,
@@ -127,7 +123,6 @@ impl EventHandler {
             on_truth_handled: HashSet::new(),
             on_truths_handled: HashSet::new(),
             on_enacted_handled: HashSet::new(),
-            on_tick_to_handled: HashSet::new(),
             #[cfg(feature = "dataplane")]
             on_data_created_handled: HashSet::new(),
             #[cfg(feature = "dataplane")]
@@ -147,7 +142,7 @@ impl EventHandler {
     /// # Returns
     /// An [`EventHandled`] that can be used to process triggers.
     #[inline]
-    pub const fn handle<T, A, S, E>(&mut self, view: View<T, A, S, E>) -> EventHandled<'_, T, A, S, E> {
+    pub const fn handle<A, S, E>(&mut self, view: View<A, S, E>) -> EventHandled<'_, A, S, E> {
         EventHandled {
             handler: self,
             view,
@@ -168,24 +163,24 @@ impl EventHandler {
     /// An [`EventHandled`] that can be used to process triggers.
     #[inline]
     #[cfg(feature = "dataplane")]
-    pub const fn handle_with_store<T, A, S, E>(&mut self, view: View<T, A, S, E>, store: ScopedStoreHandle) -> EventHandled<'_, T, A, S, E> {
+    pub const fn handle_with_store<A, S, E>(&mut self, view: View<A, S, E>, store: ScopedStoreHandle) -> EventHandled<'_, A, S, E> {
         EventHandled { handler: self, view, store: Some(store), ready: true }
     }
 }
 
 /// Implements the state of the [`EventHandler`] after a [`View`] is added.
-pub struct EventHandled<'h, T, A, S, E> {
+pub struct EventHandled<'h, A, S, E> {
     /// The handler (that contains some state).
     handler: &'h mut EventHandler,
     /// The view to process.
-    view:    View<T, A, S, E>,
+    view:    View<A, S, E>,
     /// The store to use for dataplane access. Since not all agents need that, it's optional.
     #[cfg(feature = "dataplane")]
     store:   Option<ScopedStoreHandle>,
     /// Whether all handles registered for this view are triggered (i.e., the agent is done).
     ready:   bool,
 }
-impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
+impl<'h, A, S, E> EventHandled<'h, A, S, E> {
     /// Adds a new handler for when the scenario starts.
     ///
     /// # Arguments
@@ -196,7 +191,7 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
     ///
     /// # Errors
     /// This function may error if the closure errors.
-    pub fn on_start<ERR>(mut self, closure: impl FnOnce(&mut View<T, A, S, E>) -> Result<(), ERR>) -> Result<Self, Error>
+    pub fn on_start<ERR>(mut self, closure: impl FnOnce(&mut View<A, S, E>) -> Result<(), ERR>) -> Result<Self, Error>
     where
         ERR: 'static + Send + error::Error,
     {
@@ -231,11 +226,10 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
         mut self,
         agree: (impl Into<String>, u32),
         stmts: impl IntoIterator<Item = (impl Into<String>, u32)>,
-        closure: impl FnOnce(&mut View<T, A, S, E>, Agreement<SM, u64>, Vec<SM>) -> Result<(), ERR>,
+        closure: impl FnOnce(&mut View<A, S, E>, Agreement<SM>, Vec<SM>) -> Result<(), ERR>,
     ) -> Result<Self, Error>
     where
-        T: Times<Timestamp = u64>,
-        A: Map<Agreement<SM, u64>>,
+        A: Map<Agreement<SM>>,
         S: Map<SM>,
         SM: Clone + Identifiable<Id = (String, u32)>,
         ERR: 'static + Send + error::Error,
@@ -249,14 +243,8 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
         }
 
         // First, wait until the agreement is there
-        let found_agree: Agreement<SM, u64> = if let Some(agree) = self.view.agreed.get(&agree).cast()? {
-            // Holdup; ensure the agreement's time is current too!
-            if self.view.times.current().cast()?.contains(&agree.at) {
-                agree.clone()
-            } else {
-                self.ready = false;
-                return Ok(self);
-            }
+        let found_agree: Agreement<SM> = if let Some(agree) = self.view.agreed.get(&agree).cast()? {
+            agree.clone()
         } else {
             self.ready = false;
             return Ok(self);
@@ -300,11 +288,10 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
     pub fn on_agreed<SM, ERR>(
         mut self,
         id: (impl Into<String>, u32),
-        closure: impl FnOnce(&mut View<T, A, S, E>, Agreement<SM, u64>) -> Result<(), ERR>,
+        closure: impl FnOnce(&mut View<A, S, E>, Agreement<SM>) -> Result<(), ERR>,
     ) -> Result<Self, Error>
     where
-        T: Times<Timestamp = u64>,
-        A: Map<Agreement<SM, u64>>,
+        A: Map<Agreement<SM>>,
         SM: Clone + Identifiable<Id = (String, u32)>,
         ERR: 'static + Send + error::Error,
     {
@@ -316,7 +303,7 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
         }
 
         // Else, check to see if the statement has become available
-        let agree: Option<Agreement<SM, u64>> = if let Some(agree) = self.view.agreed.get(&id).cast()? {
+        let agree: Option<Agreement<SM>> = if let Some(agree) = self.view.agreed.get(&id).cast()? {
             // Holdup; ensure the agreement's time is current too!
             if self.view.times.current().cast()?.contains(&agree.at) { Some(agree.clone()) } else { None }
         } else {
@@ -354,7 +341,7 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
     pub fn on_stated<SM, ERR>(
         mut self,
         id: (impl Into<String>, u32),
-        closure: impl FnOnce(&mut View<T, A, S, E>, SM) -> Result<(), ERR>,
+        closure: impl FnOnce(&mut View<A, S, E>, SM) -> Result<(), ERR>,
     ) -> Result<Self, Error>
     where
         S: Map<SM>,
@@ -395,10 +382,10 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
     /// # Errors
     /// This function may error if something went wrong with interacting with the sets in the
     /// internal view.
-    pub fn on_truth<SM, ERR>(mut self, fact: GroundAtom, closure: impl FnOnce(&mut View<T, A, S, E>) -> Result<(), ERR>) -> Result<Self, Error>
+    pub fn on_truth<SM, ERR>(mut self, fact: GroundAtom, closure: impl FnOnce(&mut View<A, S, E>) -> Result<(), ERR>) -> Result<Self, Error>
     where
         S: Map<SM>,
-        SM: Message<Id = (String, u32), AuthorId = str, Payload = Program>,
+        SM: Message<AuthorId = str, Payload = Program>,
         ERR: 'static + Send + error::Error,
     {
         // Don't do anything if we've already handled it
@@ -448,11 +435,11 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
     pub fn on_truths<SM, ERR>(
         mut self,
         facts: impl IntoIterator<Item = GroundAtom>,
-        closure: impl FnOnce(&mut View<T, A, S, E>) -> Result<(), ERR>,
+        closure: impl FnOnce(&mut View<A, S, E>) -> Result<(), ERR>,
     ) -> Result<Self, Error>
     where
         S: Map<SM>,
-        SM: Message<Id = (String, u32), AuthorId = str, Payload = Program>,
+        SM: Message<AuthorId = str, Payload = Program>,
         ERR: 'static + Send + error::Error,
     {
         let facts: Vec<GroundAtom> = facts.into_iter().collect();
@@ -503,7 +490,7 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
     pub fn on_enacted<SA, ERR>(
         mut self,
         id: (impl Into<String>, char),
-        closure: impl FnOnce(&mut View<T, A, S, E>, SA) -> Result<(), ERR>,
+        closure: impl FnOnce(&mut View<A, S, E>, SA) -> Result<(), ERR>,
     ) -> Result<Self, Error>
     where
         E: Map<SA>,
@@ -532,43 +519,6 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
         Ok(self)
     }
 
-    /// Adds a new handler for when the current time is updated to the given one.
-    ///
-    /// # Arguments
-    /// - `tiemstamp`: The timestamp to wait for.
-    /// - `closure`: Some [`FnOnce`] that will be executed when the action has become available.
-    ///
-    /// # Returns
-    /// Self for chaining.
-    ///
-    /// # Errors
-    /// This function may error if something went wrong with interacting with the sets in the
-    /// internal view.
-    pub fn on_tick_to<ERR>(mut self, timestamp: u64, closure: impl FnOnce(&mut View<T, A, S, E>) -> Result<(), ERR>) -> Result<Self, Error>
-    where
-        T: Times<Timestamp = u64>,
-        ERR: 'static + Send + error::Error,
-    {
-        // Don't do anything if we've already handled it
-        if self.handler.on_tick_to_handled.contains(&timestamp) {
-            return Ok(self);
-        }
-
-        // Else, check to see if the statement has become available
-        if self.view.times.current().cast()?.contains(&timestamp) {
-            // Handled it
-            self.handler.on_tick_to_handled.insert(timestamp);
-
-            // Call the closure
-            closure(&mut self.view).cast()?;
-        } else {
-            self.ready = false;
-        }
-
-        // Done
-        Ok(self)
-    }
-
     /// Triggers on a certain dataset existing.
     ///
     /// # Arguments
@@ -586,7 +536,7 @@ impl<'h, T, A, S, E> EventHandled<'h, T, A, S, E> {
     pub fn on_data_created<ERR>(
         mut self,
         id: ((impl Into<String>, impl Into<String>), impl Into<String>),
-        closure: impl FnOnce(&mut View<T, A, S, E>) -> Result<(), ERR>,
+        closure: impl FnOnce(&mut View<A, S, E>) -> Result<(), ERR>,
     ) -> Result<Self, Error>
     where
         ERR: 'static + Send + error::Error,

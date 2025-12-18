@@ -16,17 +16,19 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter, Result as FResult};
+use std::hash::Hash;
 use std::sync::Arc;
 
-use ::justact::collections::map::InfallibleMap as _;
-use ::justact::policies::{Denotation as _, Policy as _};
+use ::justact::actions::Action as _;
+use ::justact::collections::set::InfallibleSet as _;
+use ::justact::policies::{Denotation as _, Extractor as _, Policy as _};
 use slick::text::Text;
 use slick::{GroundAtom, Program};
 
 use crate::codegen::impl_enum_with_custom_derive;
 use crate::policy::PolicyDeserialize;
 use crate::policy::slick::{AffectorAtom, Denotation, Effect, Extractor, PatternAtom, SyntaxError};
-use crate::wire::{Action, Agreement, Message, deserialize_agreement};
+use crate::wire::{Action, Message};
 
 mod justact {
     pub use ::justact::collections::Recipient;
@@ -35,24 +37,26 @@ mod justact {
 
 /***** AUXILLARY *****/
 /// Defines how we describe the validity of an action.
+///
+/// Corresponds to Definition 3.5 of the paper:
+/// > $$permitted(c: config, a: action) := valid-act(a) \wedge sourced(c, a) \wedge based(c, a).$$
 #[derive(Clone, Debug)]
 pub struct Permission {
-    /// Definition 3.3, part 1: stated justification.
+    /// Definition 3.7
+    /// > $$valid-act(a: action) := valid(payload(extract(a))).$$
     ///
-    /// I.e., all messages in the justification are stated at the time of enacting.
-    pub stated:  bool,
-    /// Definition 3.3, part 2: based justification.
+    /// I.e., the chosen set of messages in the act does not invalidate the policy.
+    pub valid_act: bool,
+    /// Definition 3.8
+    /// > $$sourced(c: config, a: action) := \forall m \in payload(a),stated(c, m).$$
     ///
-    /// I.e., the message contained in the basis is also in the justification.
-    pub based:   bool,
-    /// Definition 3.3, part 3: valid justification.
+    /// I.e., the chosen set of messages in the act are all stated.
+    pub sourced:   bool,
+    /// Definition 3.10
+    /// > $$based(c, a) := m \in payload(a) \wedge agreed(c, m)\text{ where }m := basis(a).$$
     ///
-    /// I.e., the justification's denotation does not derive `error`.
-    pub valid:   bool,
-    /// Definition 3.4, part 4: current action.
-    ///
-    /// I.e., the basis is at a current time at the time of enacting.
-    pub current: bool,
+    /// I.e., the justification includes an agreed message marked as the basis of the action.
+    pub based:     bool,
 
     /// Describes the truths denoted by this action.
     ///
@@ -65,8 +69,12 @@ pub struct Permission {
     pub effects: Vec<Effect>,
 }
 impl Default for Permission {
+    /// Initializes the default Permission.
+    ///
+    /// Note that it is initialized such that [`Permission::is_permitted()`] yields _true_, for
+    /// convenience (one can simply conjunct a list of permissions).
     #[inline]
-    fn default() -> Self { Self { stated: true, based: true, valid: true, current: true, truths: Vec::new(), effects: Vec::new() } }
+    fn default() -> Self { Self { valid_act: true, sourced: true, based: true, truths: Vec::new(), effects: Vec::new() } }
 }
 impl Permission {
     /// Checks whether the action represented by this permission is permitted.
@@ -74,7 +82,7 @@ impl Permission {
     /// # Returns
     /// True if it's a correctly justified action, or false otherwise.
     #[inline]
-    pub const fn is_permitted(&self) -> bool { self.stated && self.based && self.valid && self.current }
+    pub const fn is_permitted(&self) -> bool { self.valid_act && self.sourced && self.based }
 }
 
 
@@ -116,7 +124,10 @@ impl<'a> Event<'a, str> {
     ///
     /// # Returns
     /// A translated [`Event`] that has messages over `P` instead of [`str`]ings.
-    pub fn deserialize<'s, P: ?Sized + PolicyDeserialize<'s> + ToOwned>(&'s self) -> Result<Event<'a, P>, P::Error> {
+    pub fn deserialize<'s, P: ?Sized + PolicyDeserialize<'s> + ToOwned>(&'s self) -> Result<Event<'a, P>, P::Error>
+    where
+        P::Owned: Eq + Hash,
+    {
         match self {
             Self::Control { event } => Ok(Event::Control { event: event.deserialize()? }),
             Self::Data { event } => Ok(Event::Data { event: event.clone() }),
@@ -129,9 +140,7 @@ impl_enum_with_custom_derive! {
     /// Defines what may be traced by the JustAct-part of the framework (governance).
     pub enum EventControl<'a, P: ToOwned> {
         /// Traces the addition of a new agreement.
-        AddAgreement { agree: Agreement<P> },
-        /// Traces the advancement of the current time.
-        AdvanceTime { timestamp: u64 },
+        AddAgreement { agree: Arc<Message<P>> },
         /// Traces the enacting of an action.
         EnactAction { who: Cow<'a, str>, to: justact::Recipient<Cow<'a, str>>, action: Action<P> },
         /// States a new message.
@@ -152,7 +161,6 @@ where
     pub fn into_owned(self) -> EventControl<'static, P> {
         match self {
             Self::AddAgreement { agree } => EventControl::AddAgreement { agree },
-            Self::AdvanceTime { timestamp } => EventControl::AdvanceTime { timestamp },
             Self::EnactAction { who, to, action } => EventControl::EnactAction {
                 who: Cow::Owned(who.into_owned()),
                 to: match to {
@@ -180,10 +188,12 @@ impl<'a> EventControl<'a, str> {
     ///
     /// # Returns
     /// A translated [`EventControl`] that has messages over `P` instead of [`str`]ings.
-    pub fn deserialize<'s, P: ?Sized + PolicyDeserialize<'s> + ToOwned>(&'s self) -> Result<EventControl<'a, P>, P::Error> {
+    pub fn deserialize<'s, P: ?Sized + PolicyDeserialize<'s> + ToOwned>(&'s self) -> Result<EventControl<'a, P>, P::Error>
+    where
+        P::Owned: Eq + Hash,
+    {
         match self {
-            Self::AddAgreement { agree } => Ok(EventControl::AddAgreement { agree: deserialize_agreement(agree)? }),
-            Self::AdvanceTime { timestamp } => Ok(EventControl::AdvanceTime { timestamp: *timestamp }),
+            Self::AddAgreement { agree } => Ok(EventControl::AddAgreement { agree: Arc::new(agree.deserialize()?) }),
             Self::EnactAction { who, to, action } => {
                 Ok(EventControl::EnactAction { who: who.clone(), to: to.clone(), action: action.deserialize()? })
             },
@@ -247,10 +257,10 @@ impl<'a> EventData<'a> {
 pub struct Audit {
     /// The current number of events seen.
     i: usize,
+    /// The list of agreed messages up to this point.
+    agreed: HashSet<Program>,
     /// The list of stated messages up to this point.
-    stated: HashSet<(String, u32)>,
-    /// The current time at this point.
-    current: Option<u64>,
+    stated: HashSet<Program>,
     /// A list of event indices mapping [`EventControl::EnactAction`]s to [`Permission`]s.
     validity: HashMap<usize, Result<Permission, SyntaxError>>,
 }
@@ -266,7 +276,9 @@ impl Audit {
     /// # Returns
     /// A new Audit ready for (wait for it) auditing.
     #[inline]
-    pub fn new() -> Self { Self { i: 0, stated: HashSet::with_capacity(64), current: None, validity: HashMap::with_capacity(16) } }
+    pub fn new() -> Self {
+        Self { i: 0, agreed: HashSet::with_capacity(4), stated: HashSet::with_capacity(64), validity: HashMap::with_capacity(16) }
+    }
 }
 
 // Auditing
@@ -282,13 +294,9 @@ impl Audit {
         match event {
             // We're only interested in control plane events
             Event::Control { event } => match event {
-                // We keep track of the current time & stated messages
-                EventControl::AdvanceTime { timestamp } => {
-                    self.current = Some(*timestamp);
-                    self.i += 1;
-                },
+                // We keep track of the stated messages
                 EventControl::StateMessage { who: _, to: _, msg } => {
-                    self.stated.insert(msg.id.clone());
+                    self.stated.insert(msg.payload.clone());
                     self.i += 1;
                 },
 
@@ -297,7 +305,7 @@ impl Audit {
                     let mut validity: Permission = Default::default();
 
                     // Before we begin, compute the action's denotation
-                    let denot: Denotation = match Extractor.extract_with_actor(&action.id.0, &action.extra) {
+                    let denot: Denotation = match Extractor.extract(&action.payload()) {
                         Ok(mut pol) => {
                             pol.update_effect_pattern(
                                 PatternAtom::Tuple(vec![
@@ -343,20 +351,19 @@ impl Audit {
 
 
 
-                    // First property: check whether everything in the justification is stated
+                    // First property: check whether the action is valid
+                    // NOTE: Because we have sorted truths already, the search should be crazy fast
+                    validity.valid_act = denot.is_valid();
+
+                    // Second property: check whether everything in the justification is stated
                     for msg in action.extra.iter() {
-                        validity.stated &= self.stated.contains(&msg.id);
+                        validity.sourced &= self.stated.contains(&msg.payload);
                     }
 
-                    // Second property: is the basis in the justification?
-                    validity.based = action.extra.contains_key(&action.basis.message.id);
-
-                    // Third property: are the truths valid?
-                    // NOTE: Because we have sorted truths already, the search should be crazy fast
-                    validity.valid = denot.is_valid();
-
-                    // Fourth property: is the basis current?
-                    validity.current = Some(action.basis.at) == self.current;
+                    // Third property: is the basis agreed?
+                    // NOTE: By construction, everything in agreed is also stated, so we don't
+                    // check that explicitly.
+                    validity.based = denot.is_valid();
 
 
 
@@ -366,7 +373,10 @@ impl Audit {
                 },
 
                 // Adding of agreements has no effect on us.
-                EventControl::AddAgreement { agree: _ } => self.i += 1,
+                EventControl::AddAgreement { agree } => {
+                    self.agreed.insert(agree.payload.clone());
+                    self.i += 1
+                },
             },
 
             // Data events have no bearing on us

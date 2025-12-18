@@ -51,11 +51,49 @@ macro_rules! impl_struct_with_custom_derive {
         // Don't forget to continue to implement any others
         $crate::codegen::impl_struct_with_custom_derive!(impl $($trait),* for $name { $($field),* });
     };
+    (impl Eq $(, $trait:ident)* for $name:ident { $($field:ident),* }) => {
+        impl<P: ?Sized + ToOwned> Eq for $name<P>
+        where
+            P::Owned: Eq,
+        {}
+
+        // Don't forget to continue to implement any others
+        $crate::codegen::impl_struct_with_custom_derive!(impl $($trait),* for $name { $($field),* });
+    };
+    (impl Hash $(, $trait:ident)* for $name:ident { $($field:ident),* }) => {
+        impl<P: ?Sized + ToOwned> std::hash::Hash for $name<P>
+        where
+            P::Owned: std::hash::Hash,
+        {
+            #[inline]
+            fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+                $(self.$field.hash(hasher);)*
+            }
+        }
+
+        // Don't forget to continue to implement any others
+        $crate::codegen::impl_struct_with_custom_derive!(impl $($trait),* for $name { $($field),* });
+    };
+    (impl PartialEq $(, $trait:ident)* for $name:ident { $($field:ident),* }) => {
+        impl<P: ?Sized + ToOwned> PartialEq for $name<P>
+        where
+            P::Owned: PartialEq,
+        {
+            #[inline]
+            fn eq(&self, other: &Self) -> bool {
+                true
+                $(&& self.$field == other.$field)*
+            }
+        }
+
+        // Don't forget to continue to implement any others
+        $crate::codegen::impl_struct_with_custom_derive!(impl $($trait),* for $name { $($field),* });
+    };
     (impl Deserialize $(, $trait:ident)* for $name:ident { $($field:ident),* }) => {
         #[cfg(feature = "serde")]
         impl<'de, P: ?Sized + ToOwned> serde::Deserialize<'de> for $name<P>
         where
-            P::Owned: serde::Deserialize<'de>,
+            P::Owned: serde::Deserialize<'de> + Eq + std::hash::Hash,
         {
             #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -66,7 +104,7 @@ macro_rules! impl_struct_with_custom_derive {
                 struct Visitor<P: ?Sized>(std::marker::PhantomData<P>);
                 impl<'de, P: ?Sized + ToOwned> serde::de::Visitor<'de> for Visitor<P>
                 where
-                    P::Owned: serde::Deserialize<'de>,
+                    P::Owned: serde::Deserialize<'de> + Eq + Hash,
                 {
                     type Value = $name<P>;
 
@@ -213,7 +251,7 @@ macro_rules! impl_enum_with_custom_derive {
         #[cfg(feature = "serde")]
         impl<'de, P: ?Sized + ToOwned> serde::Deserialize<'de> for $name<'de, P>
         where
-            P::Owned: serde::Deserialize<'de>,
+            P::Owned: serde::Deserialize<'de> + Eq + std::hash::Hash,
         {
             #[inline]
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -224,7 +262,7 @@ macro_rules! impl_enum_with_custom_derive {
                 struct Visitor<P: ?Sized>(std::marker::PhantomData<P>);
                 impl<'de, P: ?Sized + ToOwned> serde::de::Visitor<'de> for Visitor<P>
                 where
-                    P::Owned: serde::Deserialize<'de>,
+                    P::Owned: serde::Deserialize<'de> + Eq + std::hash::Hash,
                 {
                     type Value = $name<'de, P>;
 

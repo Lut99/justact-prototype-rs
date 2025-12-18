@@ -21,11 +21,11 @@ use thiserror::Error;
 
 use crate::io::TracingSet;
 use crate::policy::PolicySerialize;
-use crate::sets::{Actions, Agreements, Statements, Times};
+use crate::sets::{Actions, Agreements, Statements};
 
 mod justact {
     pub use ::justact::actors::{Agent, Synchronizer, View};
-    pub use ::justact::runtime::Runtime;
+    pub use ::justact::runtime::System;
 }
 
 
@@ -54,8 +54,6 @@ pub enum Error {
 /***** LIBRARY *****/
 /// Defines the prototype runtime that will do things in-memory.
 pub struct System<P: ?Sized + ToOwned> {
-    /// Defines the set of all times (and which are current).
-    times:   TracingSet<Times>,
     /// Defines the set of all agreements.
     agreed:  TracingSet<Agreements<P>>,
     /// Defines the set of all stated messages.
@@ -74,24 +72,16 @@ impl<P: ?Sized + ToOwned> System<P> {
     /// An empty System, ready to [run](Runtime::run()).
     #[inline]
     pub fn new() -> Self {
-        Self {
-            times:   TracingSet(Times::new()),
-            agreed:  TracingSet(Agreements::new()),
-            stated:  TracingSet(Statements::new()),
-            enacted: TracingSet(Actions::new()),
-        }
+        Self { agreed: TracingSet(Agreements::new()), stated: TracingSet(Statements::new()), enacted: TracingSet(Actions::new()) }
     }
 }
-impl<P: ?Sized + PolicySerialize + ToOwned> justact::Runtime for System<P>
+impl<P: ?Sized + PolicySerialize + ToOwned> justact::System for System<P>
 where
     P::Owned: Clone,
 {
-    type MessageId = (String, u32);
-    type ActionId = (String, char);
     type AgentId = str;
     type SynchronizerId = str;
     type Payload = P;
-    type Timestamp = u64;
     type Error = Error;
 
 
@@ -99,10 +89,10 @@ where
     fn run<A>(
         &mut self,
         agents: impl IntoIterator<Item = A>,
-        synchronizer: impl justact::Synchronizer<Self::MessageId, Self::ActionId, Self::Payload, Self::Timestamp, Id = Self::SynchronizerId>,
+        synchronizer: impl justact::Synchronizer<Self::Payload, Id = Self::SynchronizerId>,
     ) -> Result<(), Self::Error>
     where
-        A: justact::Agent<Self::MessageId, Self::ActionId, Self::Payload, Self::Timestamp, Id = Self::AgentId>,
+        A: justact::Agent<Self::Payload, Id = Self::AgentId>,
     {
         // First, register any non-registered agents
         self.stated.register(synchronizer.id());
@@ -123,7 +113,6 @@ where
                     // Run the agent
                     let agent_id: String = agent.id().into();
                     match agent.poll(justact::View {
-                        times:   &self.times,
                         agreed:  &self.agreed,
                         stated:  self.stated.scope(&agent_id),
                         enacted: self.enacted.scope(&agent_id),
@@ -143,7 +132,6 @@ where
             synchronizer = if let Some(mut sync) = synchronizer.take() {
                 let sync_id: String = sync.id().into();
                 match sync.poll(justact::View {
-                    times:   &mut self.times,
                     agreed:  &mut self.agreed,
                     stated:  self.stated.scope(&sync_id),
                     enacted: self.enacted.scope(&sync_id),

@@ -300,15 +300,15 @@ impl<'f, 's> DerefMut for Policy<'f, 's> {
 /// Represents the [`Extractor`] for Datalog's [`Spec`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Extractor;
-impl justact::Extractor<str, str, str> for Extractor {
-    type Policy<'m> = Policy<'m, 'm>;
-    type Error<'m> = SyntaxError<'m>;
+impl<'m> justact::Extractor<str, ast::Spec<(&'m str, &'m str)>> for Extractor {
+    type Policy<'a> = Policy<'m, 'm>;
+    type Error<'a> = SyntaxError<'m>;
 
 
     #[inline]
-    fn extract<'m, 'm2: 'm, M: 'm2 + justact::Message<Id = str, AuthorId = str, Payload = str>>(
+    fn extract<'a, M: justact::Message<AuthorId = str, Payload = ast::Spec<(&'m str, &'m str)>>>(
         &self,
-        msgs: &'m impl justact::Map<M>,
+        msgs: &'a impl justact::Set<M>,
     ) -> Result<Self::Policy<'m>, Self::Error<'m>> {
         // Attempt to iterate over the messages
         let iter = msgs.iter().map_err(|err| SyntaxError::Iter { what: std::any::type_name::<M>(), err: Box::new(err) })?;
@@ -317,14 +317,8 @@ impl justact::Extractor<str, str, str> for Extractor {
         let mut add_error: bool = false;
         let mut policy = Policy::default();
         for msg in iter {
-            // Parse as UTF-8
-            let snippet: &str = msg.payload();
-
-            // Parse as Datalog
-            let msg_spec: ast::Spec<(&'m str, &'m str)> = match parse((msg.id(), snippet)) {
-                Ok(spec) => spec,
-                Err(err) => return Err(SyntaxError::Datalog { err }),
-            };
+            // Get the Datalog
+            let msg_spec: &ast::Spec<(&'m str, &'m str)> = msg.payload();
 
             // Check if there's any illegal rules
             if !add_error {
@@ -368,7 +362,7 @@ impl justact::Extractor<str, str, str> for Extractor {
 
             // OK, now we can add all the rules together
             policy.spec.rules.reserve(msg_spec.rules.len());
-            for rule in msg_spec.rules {
+            for rule in &msg_spec.rules {
                 // Attempt to compile it
                 match rule.compile() {
                     Ok(rule) => policy.spec.rules.push(rule),
@@ -422,7 +416,7 @@ mod tests {
     use std::collections::HashMap;
     use std::convert::Infallible;
 
-    use datalog::ast::datalog;
+    use datalog::ast::{Spec, datalog};
     use datalog::ir::{GroundAtom, Ident};
 
     use super::{Denotation, Effect, Extractor, Policy};
@@ -446,40 +440,30 @@ mod tests {
     }
 
     /// Implements a test message
+    #[derive(Eq, Hash, PartialEq)]
     struct Message {
-        id: String,
         author_id: String,
-        payload: String,
+        payload:   Spec<(&'static str, &'static str)>,
     }
     impl justact::Authored for Message {
         type AuthorId = str;
         #[inline]
         fn author_id(&self) -> &Self::AuthorId { &self.author_id }
     }
-    impl justact::Identifiable for Message {
-        type Id = str;
-        #[inline]
-        fn id(&self) -> &Self::Id { &self.id }
-    }
     impl justact::Message for Message {
-        type Payload = str;
+        type Payload = Spec<(&'static str, &'static str)>;
 
         #[inline]
         fn payload(&self) -> &Self::Payload { &self.payload }
     }
-    impl justact::Map<Self> for Message {
+    impl justact::Set<Self> for Message {
         type Error = Infallible;
         #[inline]
-        fn get(&self, id: &<Self as justact::Identifiable>::Id) -> Result<Option<&Self>, Self::Error>
-        where
-            Self: justact::Identifiable,
-        {
-            if &self.id == id { Ok(Some(self)) } else { Ok(None) }
-        }
+        fn get(&self, elem: &Self) -> Result<Option<&Self>, Self::Error> { if self == elem { Ok(Some(self)) } else { Ok(None) } }
         #[inline]
         fn iter<'s>(&'s self) -> Result<impl Iterator<Item = &'s Self>, Self::Error>
         where
-            Self: 's + justact::Identifiable,
+            Self: 's,
         {
             Ok(Some(self).into_iter())
         }
@@ -490,20 +474,20 @@ mod tests {
 
     #[test]
     fn test_extract_policy_single() {
-        let msg = Message { id: "A".into(), author_id: "Amy".into(), payload: "foo. bar :- baz(A).".into() };
-        let pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msg).unwrap();
+        let msg = Message { author_id: "Amy".into(), payload: datalog!(foo. bar :- baz(A).) };
+        let pol = <Extractor as justact::Extractor<str, Spec<(&str, &str)>>>::extract(&Extractor, &msg).unwrap();
         assert_eq!(pol.spec, datalog!( foo. bar :- baz(A). ).compile().unwrap());
     }
     #[test]
     fn test_extract_policy_multi() {
         // Construct a set of messages
-        let msg1 = Message { id: "A".into(), author_id: "Amy".into(), payload: "foo.".into() };
-        let msg2 = Message { id: "B".into(), author_id: "Bob".into(), payload: "bar :- baz(A).".into() };
+        let msg1 = Message { author_id: "Amy".into(), payload: datalog!(foo.) };
+        let msg2 = Message { author_id: "Bob".into(), payload: datalog!(bar :- baz(A).) };
         let msgs = justact::MessageSet::from_iter([msg1, msg2]);
 
         // Extract the policy from it
         // NOTE: MessageSet collects messages unordered, so we'll have to sort them to get a deterministic answer
-        let mut pol = <Extractor as justact::Extractor<str, str, str>>::extract(&Extractor, &msgs).unwrap();
+        let mut pol = <Extractor as justact::Extractor<str, Spec<(&str, &str)>>>::extract(&Extractor, &msgs).unwrap();
         pol.rules.sort_by(|r1, r2| r1.to_string().cmp(&r2.to_string()));
 
         // NOTE: MessageSet collects messages unordered, so the rules may be in any order
