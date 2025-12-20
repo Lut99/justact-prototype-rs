@@ -22,11 +22,6 @@ error (illegal read by Worker of Variable without Checker authorisation) if Work
                                                                              and Task has input Variable
                                                                              and Variable involves Checker
                                                                              and not Checker says ( authorise read of Variable for Task by Worker ).
-                                                                           
-// The updated rules!
-Task involves Agent if Agent controls (Task Label)
-                    and not Agent says ((Task Label) is insensitive).
-Task2 involves Agent if Task has input (Task1 Label) and Task1 involves Agent
 
 // The new rule!
 (surf utils) involves surf.

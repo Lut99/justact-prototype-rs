@@ -13,14 +13,16 @@
 //!   \[1\].
 //
 
-mod agents;
+mod helpers;
 mod trace;
 
-use agents::{Agent, Consortium, Script, StAntonius};
 use clap::Parser;
 use error_trace::toplevel;
+use helpers::ground_atom;
 use humanlog::{DebugMode, HumanLogger};
-use justact::runtime::Runtime as _;
+use justact::collections::Recipient;
+use justact::runtime::System as _;
+use justact_prototype::agent::Agent;
 use justact_prototype::dataplane::StoreHandle;
 use justact_prototype::runtime::System;
 use log::{debug, error, info};
@@ -82,12 +84,29 @@ fn main() {
 
     // Create the agents
     let dataplane = StoreHandle::new();
-    let agents: [Agent; 1] = [StAntonius::new(Script::Section6_3_5, &dataplane).into()];
-    let sync = Consortium::new(Script::Section6_3_5);
+
+    let mut st_antonius = Agent::with_store("st-antonius".into(), dataplane.scope("st-antonius"));
+    st_antonius.program()
+        // The St. Antonius will always publish they have the `patients` dataset.
+        .state(Recipient::All, slick::parse::program(include_str!("./slick/st-antonius_1.slick")).unwrap().1)
+        // And once they did so, they'll always try to enact- and write it.
+        .enact_on_truth(ground_atom!(("st-antonius" "patients-2024") executed))
+        .write((("st-antonius", "patients-2024"), "patients"), "st-antonius 1", b"billy bob jones\ncharlie brown\nanakin skywalker")
+
+        // In the final example, we end with publishing some information useful for the
+        // second agreement!
+        .state_on_truth(ground_atom!((surf utils) involves surf), Recipient::All, slick::parse::program(include_str!("./slick/st-antonius_7.slick")).unwrap().1);
+
+    let mut sync = Agent::new("consortium".into());
+    sync.program()
+        // In the final example, the consortium will refresh the agreement after St. Antonius published
+        .agree(slick::parse::program(include_str!("./slick/consortium_1.slick")).unwrap().1)
+        .wait_for_truth(ground_atom!(("st-antonius" "patients-2024") executed))
+        .agree(slick::parse::program(include_str!("./slick/consortium_2.slick")).unwrap().1);
 
     // Run the runtime!
     let mut runtime = System::new();
-    if let Err(err) = runtime.run::<Agent>(agents, sync) {
+    if let Err(err) = runtime.run::<Agent>([st_antonius], sync) {
         error!("{}", toplevel!(("Failed to run runtime"), err));
         std::process::exit(1);
     }

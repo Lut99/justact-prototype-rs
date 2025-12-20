@@ -22,7 +22,7 @@ use crossterm::event::EventStream;
 use error_trace::toplevel;
 use futures::{FutureExt as _, StreamExt as _};
 use justact::collections::Recipient;
-use justact::collections::map::InfallibleMap;
+use justact::collections::set::InfallibleSet;
 use justact_prototype::auditing::{Audit, Event, EventControl, EventData, Permission};
 use justact_prototype::policy::PolicySerialize;
 use justact_prototype::policy::slick::{GroundAtom, Program, Text as SlickText};
@@ -434,20 +434,17 @@ impl<'s> StateGuard<'s> {
                 .split(vrects[1]);
         let titles = self.trace.iter().enumerate().map(|(i, t)| match t {
             Event::Control { event } => match event {
-                EventControl::AddAgreement { agree } => {
+                EventControl::SetAgreements { agrees } => {
                     let mut text = Text::default().fg(left_color);
                     text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
                     text.push_span(Span::from("[JUSTACT]").italic());
-                    text.push_span(" Published agreement ");
-                    text.push_span(Span::from(format!("\"{} {}\"", agree.message.id.0, agree.message.id.1)).green());
-                    text
-                },
-                EventControl::AdvanceTime { timestamp } => {
-                    let mut text = Text::default().fg(left_color);
-                    text.push_span(Span::from(format!("{:>max_trace_width$}) ", i + 1)).dark_gray());
-                    text.push_span(Span::from("[JUSTACT]").italic());
-                    text.push_span(" Advanced to time ");
-                    text.push_span(Span::from(format!("{timestamp}")).cyan());
+                    text.push_span(" Updated agreements ");
+                    for (i, agree) in agrees.iter().enumerate() {
+                        if i > 0 {
+                            text.push_span(", ");
+                        }
+                        text.push_span(Span::from(format!("{:?}", agree.human_id)).green());
+                    }
                     text
                 },
                 EventControl::EnactAction { who, to: _, action } => {
@@ -458,7 +455,7 @@ impl<'s> StateGuard<'s> {
                     text.push_span(" Agent ");
                     text.push_span(Span::from(format!("{who}")).bold());
                     text.push_span(" enacted action ");
-                    text.push_span(Span::from(format!("\"{} {}\"", action.id.0, action.id.1)).yellow());
+                    text.push_span(Span::from(format!("{:?}", action.human_id)).yellow());
                     text.push_span(" ");
                     text.push_span({
                         if self.audit.permission_of(i).and_then(|res| res.as_ref().map(|a| a.is_permitted()).ok()).unwrap_or(false) {
@@ -476,7 +473,7 @@ impl<'s> StateGuard<'s> {
                     text.push_span(" Agent ");
                     text.push_span(Span::from(format!("{who}")).bold());
                     text.push_span(" stated message ");
-                    text.push_span(Span::from(format!("\"{} {}\"", msg.id.0, msg.id.1)).red());
+                    text.push_span(Span::from(format!("{:?}", msg.human_id)).red());
                     if let Recipient::One(a) = to {
                         text.push_span(" to ");
                         text.push_span(Span::from(format!("{a}")).bold());
@@ -500,7 +497,7 @@ impl<'s> StateGuard<'s> {
                             .iter()
                             .position(|e| {
                                 if let Event::Control { event: EventControl::EnactAction { action, .. } } = e {
-                                    &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
+                                    &action.human_id == context
                                 } else {
                                     false
                                 }
@@ -536,7 +533,7 @@ impl<'s> StateGuard<'s> {
                         .iter()
                         .position(|e| {
                             if let Event::Control { event: EventControl::EnactAction { action, .. } } = e {
-                                &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
+                                &action.human_id == context
                             } else {
                                 false
                             }
@@ -578,9 +575,12 @@ impl<'s> StateGuard<'s> {
             // Render the components
             match trace {
                 Event::Control { event } => match event {
-                    EventControl::AddAgreement { agree } => {
+                    EventControl::SetAgreements { agrees } => {
+                        // Let's just assume there's only ever 1
+                        let [agree] = agrees.as_slice() else { panic!("Only one agreement update per time is supported") };
+
                         // Compute the size of the inner area of the scroll area
-                        let spayload = agree.message.payload.serialize();
+                        let spayload = agree.payload.serialize();
                         let text = Text::from(spayload.lines().map(|l| Line::raw(l)).collect::<Vec<Line>>());
                         let inner: Rect = Rect::new(0, 0, std::cmp::max(40, 2 + text.width() as u16), 4 + 2 + text.height() as u16);
 
@@ -589,7 +589,7 @@ impl<'s> StateGuard<'s> {
                             ScrollArea::new(inner).render_inner(move |mut frame| {
                                 // Prepare the layout
                                 let vrects = Layout::vertical(
-                                    Some(Constraint::Length(1)).into_iter().cycle().take(4).chain(Some(Constraint::Length(2 + text.height() as u16))),
+                                    Some(Constraint::Length(1)).into_iter().cycle().take(3).chain(Some(Constraint::Length(2 + text.height() as u16))),
                                 )
                                 .split(frame.area());
 
@@ -597,7 +597,7 @@ impl<'s> StateGuard<'s> {
                                 frame.render_widget(
                                     Paragraph::new({
                                         let mut text = Text::from("Agreement identifier: ");
-                                        text.push_span(Span::from(format!("{} {}", agree.message.id.0, agree.message.id.1)).bold());
+                                        text.push_span(Span::from(format!("{:?}", agree.human_id)).bold());
                                         text
                                     })
                                     .fg(right_color),
@@ -606,40 +606,18 @@ impl<'s> StateGuard<'s> {
                                 frame.render_widget(
                                     Paragraph::new({
                                         let mut text = Text::from("Agreement author    : ");
-                                        text.push_span(Span::from(&agree.message.id.0).bold());
+                                        text.push_span(Span::from(&agree.author_id).bold());
                                         text
                                     })
                                     .fg(right_color),
                                     vrects[1],
                                 );
-                                frame.render_widget(
-                                    Paragraph::new({
-                                        let mut text = Text::from("Agreement valid at  : ");
-                                        text.push_span(Span::from(agree.at.to_string()).bold());
-                                        text
-                                    })
-                                    .fg(right_color),
-                                    vrects[2],
-                                );
 
                                 // Render the payload
                                 frame.render_widget(
                                     Paragraph::new(text).fg(right_color).block(Block::bordered().title("Payload").fg(right_color)),
-                                    vrects[4],
+                                    vrects[3],
                                 );
-                            }),
-                            block.inner(body_rects[1]),
-                            &mut self.right_scroll,
-                        );
-                    },
-                    EventControl::AdvanceTime { timestamp } => {
-                        // Render with the scroll area
-                        let mut text = Text::from("Time advanced to: ");
-                        text.push_span(Span::from(timestamp.to_string()).bold());
-                        frame.render_stateful_widget(
-                            ScrollArea::new(Rect::new(0, 0, text.width() as u16, text.height() as u16)).render_inner(|mut frame| {
-                                // Render the time
-                                frame.render_widget(Paragraph::new(text).fg(right_color), frame.area());
                             }),
                             block.inner(body_rects[1]),
                             &mut self.right_scroll,
@@ -650,9 +628,7 @@ impl<'s> StateGuard<'s> {
                         let denot: Result<(&Permission, Text<'static>), _> = self
                             .audit
                             .permission_of(*i)
-                            .unwrap_or_else(|| {
-                                panic!("Failed to find action {} \"{} {}\" in audit after list construction!", i, action.id.0, action.id.1)
-                            })
+                            .unwrap_or_else(|| panic!("Failed to find action {} {:?} in audit after list construction!", i, action.human_id))
                             .as_ref()
                             .map(|p| {
                                 (p, {
@@ -676,13 +652,13 @@ impl<'s> StateGuard<'s> {
                         let effect_height: usize = std::cmp::max(denot.as_ref().map(|(p, _)| p.effects.len()).unwrap_or(0), 1);
                         let (denot_width, denot_height): (u16, u16) =
                             denot.as_ref().map(|(_, text)| (2 + text.width() as u16, 2 + text.height() as u16)).unwrap_or((0, 0));
-                        let inner: Rect = Rect::new(0, 0, std::cmp::max(40, denot_width), 13 + effect_height as u16 + denot_height);
+                        let inner: Rect = Rect::new(0, 0, std::cmp::max(40, denot_width), 12 + effect_height as u16 + denot_height);
 
                         // Render the information scrolled
                         frame.render_stateful_widget(
                             ScrollArea::new(inner).render_inner(|mut frame| {
                                 let vrects = Layout::vertical(
-                                    [Constraint::Length(1); 13]
+                                    [Constraint::Length(1); 12]
                                         .into_iter()
                                         .chain([Constraint::Length(1)].into_iter().cycle().take(effect_height))
                                         .chain([Constraint::Length(denot_height)]),
@@ -722,7 +698,7 @@ impl<'s> StateGuard<'s> {
                                 frame.render_widget(
                                     Paragraph::new({
                                         let mut text = Text::from("Action identifier: ");
-                                        text.push_span(Span::from(format!("{} {}", action.id.0, action.id.1)).bold());
+                                        text.push_span(Span::from(format!("{:?}", &action.human_id)).bold());
                                         text
                                     })
                                     .fg(right_color),
@@ -732,17 +708,7 @@ impl<'s> StateGuard<'s> {
                                 frame.render_widget(
                                     Paragraph::new({
                                         let mut text = Text::from("Action actor     : ");
-                                        text.push_span(Span::from(&action.id.0).bold());
-                                        text
-                                    })
-                                    .fg(right_color),
-                                    vrects[i],
-                                );
-                                i += 1;
-                                frame.render_widget(
-                                    Paragraph::new({
-                                        let mut text = Text::from("Action taken at  : ");
-                                        text.push_span(Span::from(action.basis.at.to_string()).bold());
+                                        text.push_span(Span::from(&action.actor_id).bold());
                                         text
                                     })
                                     .fg(right_color),
@@ -753,8 +719,8 @@ impl<'s> StateGuard<'s> {
                                 // Render the messages part of it
                                 frame.render_widget(
                                     Paragraph::new({
-                                        let mut text = Text::from("Basis            : ");
-                                        text.push_span(Span::from(format!("{} {}", action.basis.message.id.0, action.basis.message.id.1)).bold());
+                                        let mut text = Text::from("Basis : ");
+                                        text.push_span(Span::from(format!("{:?}", action.basis.human_id)).bold());
                                         text
                                     })
                                     .fg(right_color),
@@ -763,17 +729,17 @@ impl<'s> StateGuard<'s> {
                                 i += 1;
                                 frame.render_widget(
                                     Paragraph::new({
-                                        let mut text = Text::from("Extra              ");
+                                        let mut text = Text::from("Extra : ");
                                         if !action.extra.is_empty() {
                                             let mut msgs: Vec<&Arc<Message<Program>>> = action.extra.iter().collect();
-                                            msgs.sort_by(|lhs, rhs| lhs.id.0.cmp(&rhs.id.0).then_with(|| lhs.id.1.cmp(&rhs.id.1)));
+                                            msgs.sort_by(|lhs, rhs| lhs.human_id.cmp(&rhs.human_id));
                                             for (i, msg) in msgs.into_iter().enumerate() {
                                                 if i > 0 && i < action.extra.len() - 1 {
                                                     text.push_span(", ");
                                                 } else if i > 0 {
                                                     text.push_span(" and ");
                                                 }
-                                                text.push_span(Span::from(format!("{} {}", msg.id.0, msg.id.1)).bold());
+                                                text.push_span(Span::from(format!("{:?}", msg.human_id)).bold());
                                             }
                                         } else {
                                             text.push_span(" <empty>");
@@ -798,8 +764,15 @@ impl<'s> StateGuard<'s> {
                                                     text.push_span(Span::from("ILLEGAL").bold().red());
                                                     text.push_span(" (");
                                                     let mut first: bool = true;
-                                                    if !perm.stated {
-                                                        text.push_span(Span::from("not stated").red());
+                                                    if !perm.valid_act {
+                                                        text.push_span(Span::from("not valid").red());
+                                                        first = false;
+                                                    }
+                                                    if !perm.sourced {
+                                                        if !first {
+                                                            text.push_span(", ");
+                                                        }
+                                                        text.push_span(Span::from("not sourced").red());
                                                         first = false;
                                                     }
                                                     if !perm.based {
@@ -807,20 +780,6 @@ impl<'s> StateGuard<'s> {
                                                             text.push_span(", ");
                                                         }
                                                         text.push_span(Span::from("not based").red());
-                                                        first = false;
-                                                    }
-                                                    if !perm.valid {
-                                                        if !first {
-                                                            text.push_span(", ");
-                                                        }
-                                                        text.push_span(Span::from("not valid").red());
-                                                        first = false;
-                                                    }
-                                                    if !perm.current {
-                                                        if !first {
-                                                            text.push_span(", ");
-                                                        }
-                                                        text.push_span(Span::from("not current").red());
                                                     }
                                                     text.push_span(")");
                                                 }
@@ -912,7 +871,7 @@ impl<'s> StateGuard<'s> {
                                 frame.render_widget(
                                     Paragraph::new({
                                         let mut text = Text::from("Message identifier: ");
-                                        text.push_span(Span::from(format!("{} {}", msg.id.0, msg.id.1)).bold());
+                                        text.push_span(Span::from(format!("{:?}", msg.human_id)).bold());
                                         text
                                     })
                                     .fg(right_color),
@@ -921,7 +880,7 @@ impl<'s> StateGuard<'s> {
                                 frame.render_widget(
                                     Paragraph::new({
                                         let mut text = Text::from("Message author    : ");
-                                        text.push_span(Span::from(&msg.id.0).bold());
+                                        text.push_span(Span::from(&msg.author_id).bold());
                                         text
                                     })
                                     .fg(right_color),
@@ -956,7 +915,7 @@ impl<'s> StateGuard<'s> {
                             .iter()
                             .position(|e| {
                                 if let Event::Control { event: EventControl::EnactAction { action, .. } } = e {
-                                    &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
+                                    &action.human_id == context
                                 } else {
                                     false
                                 }
@@ -1003,7 +962,7 @@ impl<'s> StateGuard<'s> {
                         frame.render_widget(
                             Paragraph::new({
                                 let mut text = Text::from("Justified by : ");
-                                text.push_span(Span::from(format!("{} {}", context.0, context.1)).yellow());
+                                text.push_span(Span::from(format!("{:?}", context)).yellow());
                                 text.push_span(" ");
                                 match perm {
                                     Ok(perm) => {
@@ -1059,7 +1018,7 @@ impl<'s> StateGuard<'s> {
                             .iter()
                             .position(|e| {
                                 if let Event::Control { event: EventControl::EnactAction { action, .. } } = e {
-                                    &(Cow::Borrowed(action.id.0.as_str()), action.id.1) == context
+                                    &action.human_id == context
                                 } else {
                                     false
                                 }
@@ -1106,7 +1065,7 @@ impl<'s> StateGuard<'s> {
                         frame.render_widget(
                             Paragraph::new({
                                 let mut text = Text::from("Justified by : ");
-                                text.push_span(Span::from(format!("{} {}", context.0, context.1)).yellow());
+                                text.push_span(Span::from(format!("{:?}", context)).yellow());
                                 text.push_span(" ");
                                 match perm {
                                     Ok(perm) => {

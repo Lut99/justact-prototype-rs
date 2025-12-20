@@ -25,6 +25,20 @@ use std::error::Error;
 
 
 /***** LIBRARY *****/
+/// Creates a policy snippet that reflects an actor.
+pub trait PolicyReflect: ToOwned {
+    /// Creates a snippet that reflects an actor.
+    ///
+    /// # Arguments
+    /// - `name`: The name of the actor to reflect.
+    ///
+    /// # Returns
+    /// A new instance of Self that reflects the author.
+    fn reflect_actor(name: &str) -> Self::Owned;
+}
+
+
+
 /// A generic policy trait that allows us to serialize a policy to a string.
 pub trait PolicySerialize {
     /// Serializes this policy to a string.

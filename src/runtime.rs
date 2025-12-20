@@ -13,14 +13,15 @@
 //
 
 use std::error;
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::task::Poll;
 
 #[cfg(feature = "log")]
 use log::debug;
 use thiserror::Error;
 
-use crate::io::TracingSet;
-use crate::policy::PolicySerialize;
+use crate::policy::{PolicyReflect, PolicySerialize};
 use crate::sets::{Actions, Agreements, Statements};
 
 mod justact {
@@ -55,11 +56,11 @@ pub enum Error {
 /// Defines the prototype runtime that will do things in-memory.
 pub struct System<P: ?Sized + ToOwned> {
     /// Defines the set of all agreements.
-    agreed:  TracingSet<Agreements<P>>,
+    agreed:  Agreements<P>,
     /// Defines the set of all stated messages.
-    stated:  TracingSet<Statements<P>>,
+    stated:  Statements<P>,
     /// Defines the set of all enacted actions.
-    enacted: TracingSet<Actions<P>>,
+    enacted: Actions<P>,
 }
 impl<P: ?Sized + ToOwned> Default for System<P> {
     #[inline]
@@ -71,13 +72,12 @@ impl<P: ?Sized + ToOwned> System<P> {
     /// # Returns
     /// An empty System, ready to [run](Runtime::run()).
     #[inline]
-    pub fn new() -> Self {
-        Self { agreed: TracingSet(Agreements::new()), stated: TracingSet(Statements::new()), enacted: TracingSet(Actions::new()) }
-    }
+    pub fn new() -> Self { Self { agreed: Agreements::new(), stated: Statements::new(), enacted: Actions::new() } }
 }
-impl<P: ?Sized + PolicySerialize + ToOwned> justact::System for System<P>
+impl<P: ?Sized + PolicyReflect + PolicySerialize + ToOwned> justact::System for System<P>
 where
-    P::Owned: Clone,
+    P: 'static,
+    P::Owned: 'static + Clone + Debug + Eq + Hash + Send + Sync,
 {
     type AgentId = str;
     type SynchronizerId = str;
@@ -113,6 +113,7 @@ where
                     // Run the agent
                     let agent_id: String = agent.id().into();
                     match agent.poll(justact::View {
+                        id:      agent_id.clone(),
                         agreed:  &self.agreed,
                         stated:  self.stated.scope(&agent_id),
                         enacted: self.enacted.scope(&agent_id),
@@ -132,6 +133,7 @@ where
             synchronizer = if let Some(mut sync) = synchronizer.take() {
                 let sync_id: String = sync.id().into();
                 match sync.poll(justact::View {
+                    id:      sync_id.clone(),
                     agreed:  &mut self.agreed,
                     stated:  self.stated.scope(&sync_id),
                     enacted: self.enacted.scope(&sync_id),

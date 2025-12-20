@@ -13,14 +13,16 @@
 //!   \[1\].
 //
 
-mod agents;
+mod helpers;
 mod trace;
 
-use agents::{Agent, Consortium, Script, StAntonius, Surf};
 use clap::Parser;
 use error_trace::toplevel;
+use helpers::ground_atom;
 use humanlog::{DebugMode, HumanLogger};
-use justact::runtime::Runtime as _;
+use justact::collections::Recipient;
+use justact::runtime::System as _;
+use justact_prototype::agent::Agent;
 use justact_prototype::dataplane::StoreHandle;
 use justact_prototype::runtime::System;
 use log::{debug, error, info};
@@ -82,12 +84,52 @@ fn main() {
 
     // Create the agents
     let dataplane = StoreHandle::new();
-    let agents: [Agent; 2] = [StAntonius::new(Script::Section6_3_4, &dataplane).into(), Surf::new(Script::Section6_3_4, &dataplane).into()];
-    let sync = Consortium::new(Script::Section6_3_4);
+
+    let mut st_antonius = Agent::with_store("st-antonius".into(), dataplane.scope("st-antonius"));
+    st_antonius.program()
+        // The St. Antonius will always publish they have the `patients` dataset.
+        .state(Recipient::All, slick::parse::program(include_str!("./slick/st-antonius_1.slick")).unwrap().1)
+        // And once they did so, they'll always try to enact- and write it.
+        .enact_on_truth(ground_atom!(("st-antonius" "patients-2024") executed))
+        .write((("st-antonius", "patients-2024"), "patients"), "st-antonius 1", b"billy bob jones\ncharlie brown\nanakin skywalker")
+
+        // Then publish the internalised policy!
+        .state(Recipient::All, slick::parse::program(include_str!("./slick/st-antonius_5.slick")).unwrap().1)
+
+        // We provide the patient consent, but send that information only to trusted agents.
+        .state(Recipient::One("st-antonius".into()), slick::parse::program(include_str!("./slick/st-antonius_6.slick")).unwrap().1)
+        .state(Recipient::One("surf".into()), slick::parse::program(include_str!("./slick/st-antonius_6.slick")).unwrap().1);
+
+    let mut surf = Agent::with_store("surf".into(), dataplane.scope("surf"));
+    surf.program()
+        // In this example, SURF will read St. Antonius' dataset based on their blanket
+        // authorisation listing them as trusted.
+        .state_on_truths(
+            [
+                ground_atom!(("st-antonius" "patients-2024") executed),
+                ground_atom!("st-antonius" is highly trusted),
+                ground_atom!(surf is highly trusted)
+            ],
+            Recipient::All,
+            slick::parse::program(include_str!("./slick/surf_3.slick")).unwrap().1
+        )
+        .enact_on_truths([
+            // `st-antonius 1`
+            ground_atom!(("st-antonius" "patients-2024") executed),
+            // `st-antonius 5`
+            ground_atom!("st-antonius" is highly trusted),
+            ground_atom!(surf is highly trusted),
+            // `surf 3`
+            ground_atom!((surf "read-patients") executed)
+        ])
+        .read((("st-antonius", "patients-2024"), "patients"), "surf 2");
+
+    let mut sync = Agent::new("consortium".into());
+    sync.program().agree(slick::parse::program(include_str!("./slick/consortium_1.slick")).unwrap().1);
 
     // Run the runtime!
     let mut runtime = System::new();
-    if let Err(err) = runtime.run::<Agent>(agents, sync) {
+    if let Err(err) = runtime.run::<Agent>([st_antonius, surf], sync) {
         error!("{}", toplevel!(("Failed to run runtime"), err));
         std::process::exit(1);
     }

@@ -91,7 +91,7 @@ impl ScopedStoreHandle {
     pub fn read<'a>(
         &self,
         id: ((impl Into<String>, impl Into<String>), impl Into<String>),
-        context: (impl Into<Cow<'a, str>>, char),
+        context: impl Into<Cow<'a, str>>,
     ) -> Result<Option<Vec<u8>>, Error> {
         self.handle.read(&self.agent, id, context)
     }
@@ -113,7 +113,7 @@ impl ScopedStoreHandle {
     pub fn write<'a>(
         &self,
         id: ((impl Into<String>, impl Into<String>), impl Into<String>),
-        context: (impl Into<Cow<'a, str>>, char),
+        context: impl Into<Cow<'a, str>>,
         contents: impl Into<Vec<u8>>,
     ) -> Result<(), Error> {
         self.handle.write(&self.agent, id, context, contents)
@@ -196,11 +196,11 @@ impl StoreHandle {
         &self,
         who: impl AsRef<str>,
         id: ((impl Into<String>, impl Into<String>), impl Into<String>),
-        context: (impl Into<Cow<'a, str>>, char),
+        context: impl Into<Cow<'a, str>>,
     ) -> Result<Option<Vec<u8>>, Error> {
         let who: &str = who.as_ref();
         let id: ((String, String), String) = ((id.0.0.into(), id.0.1.into()), id.1.into());
-        let context: (Cow<'a, str>, char) = (context.0.into(), context.1);
+        let context: Cow<'a, str> = context.into();
 
         // Perform the read
         let contents: Option<Vec<u8>> = { self.0.borrow().get(&id).cloned() };
@@ -244,12 +244,12 @@ impl StoreHandle {
         &self,
         who: impl AsRef<str>,
         id: ((impl Into<String>, impl Into<String>), impl Into<String>),
-        context: (impl Into<Cow<'a, str>>, char),
+        context: impl Into<Cow<'a, str>>,
         contents: impl Into<Vec<u8>>,
     ) -> Result<(), Error> {
         let who: &str = who.as_ref();
         let id: ((String, String), String) = ((id.0.0.into(), id.0.1.into()), id.1.into());
-        let context: (Cow<'a, str>, char) = (context.0.into(), context.1);
+        let context: Cow<'a, str> = context.into();
         let contents: Vec<u8> = contents.into();
 
         // Log it first, for efficiency purposes (it can't fail anyway*)

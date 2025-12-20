@@ -17,12 +17,12 @@ use std::borrow::Borrow;
 use std::convert::Infallible;
 use std::fmt::{Formatter, Result as FResult};
 use std::hash::Hash;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use ::justact::collections::set::InfallibleSet as _;
+use ::justact::collections::set::{InfallibleSet as _, InfallibleSetSync as _};
 
 use crate::codegen::impl_struct_with_custom_derive;
-use crate::policy::{PolicyDeserialize, PolicySerialize};
+use crate::policy::{PolicyDeserialize, PolicyReflect, PolicySerialize};
 mod justact {
     pub use ::justact::actions::{Action, ConstructableAction};
     pub use ::justact::auxillary::{Actored, Authored};
@@ -31,11 +31,74 @@ mod justact {
 }
 
 
+/***** STATICS *****/
+/// Keeps track of messages.
+static GLOBAL_MESSAGE_COUNTER: Mutex<u32> = Mutex::new(1);
+/// Keeps track of actions.
+static GLOBAL_ACTION_COUNTER: Mutex<u32> = Mutex::new(1);
+
+
+
+
+
+/***** HELPERS *****/
+/// Convenience method for turning any [`Message`](justact::Message)-like into a [`Message`].
+///
+/// # Arguments
+/// - `msg`: Some abstract message to convert.
+///
+/// # Returns
+/// A [`Message`], wrapped in [`Arc`].
+///
+/// Note it returns a serialized version, actually, for reasons that relate to where this function
+/// is most used.
+#[inline]
+pub fn into_prototype_message<SM>(msg: &SM) -> Arc<Message<str>>
+where
+    SM: justact::Message<AuthorId = str>,
+    SM::Payload: PolicySerialize,
+{
+    Arc::new(Message { human_id: msg.human_id().into(), author_id: msg.author_id().into(), payload: msg.payload().serialize() })
+}
+
+
+
+/// Convenience method for turning any [`Action`](justact::Action)-like into an [`Action`].
+///
+/// # Arguments
+/// - `msg`: Some abstract message to convert.
+///
+/// # Returns
+/// A [`Action`].
+///
+/// Note it returns a serialized version, actually, for reasons that relate to where this function
+/// is most used.
+#[inline]
+pub fn into_prototype_action<SM, SA>(act: &SA) -> Action<str>
+where
+    SM: justact::Message<AuthorId = str>,
+    SM::Payload: PolicySerialize,
+    SA: justact::Action<ActorId = str, Message = SM>,
+{
+    Action {
+        human_id: act.human_id().into(),
+        actor_id: act.actor_id().into(),
+        basis:    into_prototype_message(act.basis()),
+        extra:    act.extra().iter().map(into_prototype_message).collect(),
+    }
+}
+
+
+
+
+
 /***** LIBRARY *****/
 impl_struct_with_custom_derive! {
     #[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
     /// Implements a [`Action`](justact::Action) in the prototype.
     pub struct Action<P: ?Sized + ToOwned> {
+        /// SECRET: An identifier for legibility.
+        pub human_id: String,
         /// Identifies this action (as an `(author, id)`-pair).
         pub actor_id: String,
         /// The payload of the action.
@@ -56,6 +119,7 @@ where
     #[inline]
     pub fn serialize(&self) -> Action<str> {
         Action {
+            human_id: self.human_id.clone(),
             actor_id: self.actor_id.clone(),
             basis:    Arc::new(self.basis.serialize()),
             extra:    self.extra.iter().map(|a| &**a).map(Message::serialize).map(Arc::new).collect(),
@@ -79,6 +143,7 @@ impl Action<str> {
         P::Owned: Eq + Hash,
     {
         Ok(Action {
+            human_id: self.human_id.clone(),
             actor_id: self.actor_id.clone(),
             basis:    Arc::new(self.basis.deserialize()?),
             extra:    self
@@ -90,19 +155,28 @@ impl Action<str> {
     }
 }
 // JustAct
-impl<P: ?Sized + ToOwned> justact::ConstructableAction for Action<P>
+impl<P: ?Sized + PolicyReflect + ToOwned> justact::ConstructableAction for Action<P>
 where
-    P::Owned: Clone,
+    P::Owned: Clone + Eq + Hash,
 {
     #[inline]
     fn new(actor_id: <Self::ActorId as ToOwned>::Owned, basis: Self::Message, extra: justact::MessageSet<Self::Message>) -> Self
     where
         Self: Sized,
     {
-        Self { actor_id: actor_id.to_owned(), basis, extra }
+        let value: u32 = {
+            let mut lock = GLOBAL_ACTION_COUNTER.lock().unwrap();
+            let value = *lock;
+            *lock += 1;
+            value
+        };
+        Self { human_id: format!("{actor_id} {value}"), actor_id, basis, extra }
     }
 }
-impl<P: ?Sized + ToOwned> justact::Action for Action<P> {
+impl<P: ?Sized + PolicyReflect + ToOwned> justact::Action for Action<P>
+where
+    P::Owned: Eq + Hash,
+{
     type Message = Arc<Message<P>>;
 
     #[inline]
@@ -112,7 +186,17 @@ impl<P: ?Sized + ToOwned> justact::Action for Action<P> {
     fn extra(&self) -> &justact::MessageSet<Self::Message> { &self.extra }
 
     #[inline]
-    fn payload(&self) -> justact::MessageSet<Self::Message> { todo!() }
+    fn payload(&self) -> justact::MessageSet<Self::Message> {
+        let mut res = justact::MessageSet::from_iter([self.basis.clone()]);
+        for msg in self.extra.iter() {
+            res.add(msg.clone());
+        }
+        res.add(Arc::new(Message { human_id: "TEMP".into(), author_id: self.actor_id.clone(), payload: P::reflect_actor(&self.actor_id) }));
+        res
+    }
+
+    #[inline]
+    fn human_id(&self) -> &str { &self.human_id }
 }
 impl<P: ?Sized + ToOwned> justact::Actored for Action<P> {
     type ActorId = str;
@@ -127,6 +211,8 @@ impl_struct_with_custom_derive! {
     #[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
     /// Implements a [`Message`](justact::Message) in the prototype.
     pub struct Message<P: ?Sized + ToOwned> {
+        /// SECRET: An identifier for legibility.
+        pub human_id: String,
         /// States the author of the message.
         pub author_id:  String,
         /// The payload of the message.
@@ -140,7 +226,9 @@ impl<P: ?Sized + PolicySerialize + ToOwned> Message<P> {
     /// # Returns
     /// A new Message, but then one over [`str`]ings instead of `P`.
     #[inline]
-    pub fn serialize(&self) -> Message<str> { Message { author_id: self.author_id.clone(), payload: self.payload.borrow().serialize() } }
+    pub fn serialize(&self) -> Message<str> {
+        Message { human_id: self.human_id.clone(), author_id: self.author_id.clone(), payload: self.payload.borrow().serialize() }
+    }
 }
 impl Message<str> {
     /// Returns a message that has parsed the internal policy.
@@ -155,7 +243,7 @@ impl Message<str> {
     /// This function can fail if the message contents were not valid for the chosen `P`olicy type.
     #[inline]
     pub fn deserialize<'a, P: ?Sized + PolicyDeserialize<'a> + ToOwned>(&'a self) -> Result<Message<P>, P::Error> {
-        Ok(Message { author_id: self.author_id.clone(), payload: P::deserialize(&self.payload)? })
+        Ok(Message { human_id: self.human_id.clone(), author_id: self.author_id.clone(), payload: P::deserialize(&self.payload)? })
     }
 }
 // JustAct
@@ -174,7 +262,13 @@ where
     where
         Self: Sized,
     {
-        Self { author_id: author_id.to_owned(), payload: payload.to_owned() }
+        let value: u32 = {
+            let mut lock = GLOBAL_MESSAGE_COUNTER.lock().unwrap();
+            let value = *lock;
+            *lock += 1;
+            value
+        };
+        Self { human_id: format!("{author_id} {value}"), author_id: author_id.to_owned(), payload: payload.to_owned() }
     }
 }
 impl<P: ?Sized + ToOwned> justact::Message for Message<P>
@@ -185,6 +279,9 @@ where
 
     #[inline]
     fn payload(&self) -> &Self::Payload { self.payload.borrow() }
+
+    #[inline]
+    fn human_id(&self) -> &str { &self.human_id }
 }
 impl<P: ?Sized + ToOwned> justact::Set<Self> for Message<P>
 where

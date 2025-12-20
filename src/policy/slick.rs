@@ -23,7 +23,7 @@ pub use slick::text::Text;
 pub use slick::{Atom, GroundAtom, Program};
 use slick::{Rule, RuleBody};
 
-use super::{PolicyDeserialize, PolicySerialize};
+use super::{PolicyDeserialize, PolicyReflect, PolicySerialize};
 mod justact {
     pub use ::justact::auxillary::{Affectored, Identifiable};
     pub use ::justact::collections::map::Map;
@@ -550,6 +550,18 @@ impl justact::Extractor<str, Program> for Extractor {
 }
 
 
+
+impl PolicyReflect for Program {
+    #[inline]
+    fn reflect_actor(name: &str) -> Self {
+        Self {
+            rules: vec![Rule {
+                consequents: vec![Atom::Tuple(vec![Atom::Constant(Text::from_str("actor")), Atom::Constant(Text::from_str(name))])],
+                rule_body:   RuleBody { pos_antecedents: Vec::new(), neg_antecedents: Vec::new(), checks: Vec::new() },
+            }],
+        }
+    }
+}
 
 impl PolicySerialize for Program {
     #[inline]

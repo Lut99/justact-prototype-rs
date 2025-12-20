@@ -140,7 +140,7 @@ impl_enum_with_custom_derive! {
     /// Defines what may be traced by the JustAct-part of the framework (governance).
     pub enum EventControl<'a, P: ToOwned> {
         /// Traces the addition of a new agreement.
-        AddAgreement { agree: Arc<Message<P>> },
+        SetAgreements { agrees: Vec<Arc<Message<P>>> },
         /// Traces the enacting of an action.
         EnactAction { who: Cow<'a, str>, to: justact::Recipient<Cow<'a, str>>, action: Action<P> },
         /// States a new message.
@@ -160,7 +160,7 @@ where
     #[inline]
     pub fn into_owned(self) -> EventControl<'static, P> {
         match self {
-            Self::AddAgreement { agree } => EventControl::AddAgreement { agree },
+            Self::SetAgreements { agrees } => EventControl::SetAgreements { agrees },
             Self::EnactAction { who, to, action } => EventControl::EnactAction {
                 who: Cow::Owned(who.into_owned()),
                 to: match to {
@@ -193,7 +193,9 @@ impl<'a> EventControl<'a, str> {
         P::Owned: Eq + Hash,
     {
         match self {
-            Self::AddAgreement { agree } => Ok(EventControl::AddAgreement { agree: Arc::new(agree.deserialize()?) }),
+            Self::SetAgreements { agrees } => Ok(EventControl::SetAgreements {
+                agrees: agrees.into_iter().map(|agree| Ok(Arc::new(agree.deserialize()?))).collect::<Result<_, _>>()?,
+            }),
             Self::EnactAction { who, to, action } => {
                 Ok(EventControl::EnactAction { who: who.clone(), to: to.clone(), action: action.deserialize()? })
             },
@@ -211,9 +213,9 @@ impl<'a> EventControl<'a, str> {
 #[cfg_attr(feature = "serde", serde(tag = "kind"))]
 pub enum EventData<'a> {
     /// Traces that somebody read from a variable.
-    Read { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, context: (Cow<'a, str>, char), contents: Option<Cow<'a, [u8]>> },
+    Read { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, context: Cow<'a, str>, contents: Option<Cow<'a, [u8]>> },
     /// Traces that somebody wrote to a variable.
-    Write { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, context: (Cow<'a, str>, char), new: bool, contents: Cow<'a, [u8]> },
+    Write { who: Cow<'a, str>, id: Cow<'a, ((String, String), String)>, context: Cow<'a, str>, new: bool, contents: Cow<'a, [u8]> },
 }
 
 // Data management
@@ -229,7 +231,7 @@ impl<'a> EventData<'a> {
             Self::Read { who, id, context, contents } => EventData::Read {
                 who: Cow::Owned(who.into_owned()),
                 id: Cow::Owned(id.into_owned()),
-                context: (Cow::Owned(context.0.into_owned()), context.1),
+                context: Cow::Owned(context.into_owned()),
                 contents: match contents {
                     Some(contents) => Some(Cow::Owned(contents.into_owned())),
                     None => None,
@@ -238,7 +240,7 @@ impl<'a> EventData<'a> {
             Self::Write { who, id, context, new, contents } => EventData::Write {
                 who: Cow::Owned(who.into_owned()),
                 id: Cow::Owned(id.into_owned()),
-                context: (Cow::Owned(context.0.into_owned()), context.1),
+                context: Cow::Owned(context.into_owned()),
                 new,
                 contents: Cow::Owned(contents.into_owned()),
             },
@@ -373,8 +375,10 @@ impl Audit {
                 },
 
                 // Adding of agreements has no effect on us.
-                EventControl::AddAgreement { agree } => {
-                    self.agreed.insert(agree.payload.clone());
+                EventControl::SetAgreements { agrees } => {
+                    for agree in agrees {
+                        self.agreed.insert(agree.payload.clone());
+                    }
                     self.i += 1
                 },
             },

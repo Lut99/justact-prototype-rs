@@ -13,17 +13,20 @@
 //!   \[1\].
 //
 
-mod agents;
+mod helpers;
 mod trace;
 
-use agents::{Agent, Bob, Consortium, Script, StAntonius, Surf};
 use clap::Parser;
 use error_trace::toplevel;
 use humanlog::{DebugMode, HumanLogger};
-use justact::runtime::Runtime as _;
+use justact::collections::Recipient;
+use justact::runtime::System as _;
+use justact_prototype::agent::Agent;
 use justact_prototype::dataplane::StoreHandle;
 use justact_prototype::runtime::System;
 use log::{debug, error, info};
+
+use crate::helpers::ground_atom;
 
 
 /***** ARGUMENTS *****/
@@ -82,16 +85,97 @@ fn main() {
 
     // Create the agents
     let dataplane = StoreHandle::new();
-    let agents: [Agent; 3] = [
-        Bob::new(Script::Section6_3_2, &dataplane).into(),
-        StAntonius::new(Script::Section6_3_2, &dataplane).into(),
-        Surf::new(Script::Section6_3_2, &dataplane).into(),
-    ];
-    let sync = Consortium::new(Script::Section6_3_2);
+
+    let mut bob = Agent::with_store("bob".into(), dataplane.scope("bob"));
+    bob.program()
+        // Bob publishes his workflow right from the start (`bob 1`).
+        .state(Recipient::All, slick::parse::program(include_str!("./slick/bob_1.slick")).unwrap().1)
+        // He can enact his workflow once the partners of it have confirmed their involvement.
+        // Specifically, he's looking for confirmation that someone executes steps 2 and 3.
+        .enact_on_truths([
+            // `bob 1`
+            ground_atom!((bob step1) executed), ground_atom!((bob step4) executed),
+            // `st-antonius 1`
+            ground_atom!(("st-antonius" "patients-2024") executed),
+            // `st-antonius 4`
+            ground_atom!((bob step3) executed),
+            // `surf 1`
+            ground_atom!((surf utils) has output "entry-count"),
+            // `surf 2`
+            ground_atom!((bob step2) executed),
+        ])
+        // Once the enactment is there, do step 1.
+        .write((("bob", "step1"), "filter-consented"), "bob 3", b"code_that_actually_filters_consent_wowie();")
+        // Then, once the partners have also written their dataset, it's our turn to do step 4.
+        .wait_for_datum((("bob", "step3"), "num-consented"))
+        .read((("bob", "step3"), "num-consented"), "bob 3");
+
+    let mut st_antonius = Agent::with_store("st-antonius".into(), dataplane.scope("st-antonius"));
+    st_antonius.program()
+        // The St. Antonius will always publish they have the `patients` dataset.
+        .state(Recipient::All, slick::parse::program(include_str!("./slick/st-antonius_1.slick")).unwrap().1)
+        // And once they did so, they'll always try to enact- and write it.
+        .enact_on_truth(ground_atom!(("st-antonius" "patients-2024") executed))
+        .write((("st-antonius", "patients-2024"), "patients"), "st-antonius 1", b"billy bob jones\ncharlie brown\nanakin skywalker")
+
+        // After Bob has published their workflow, the St. Antonius elects to do task 3,
+        // giving SURF authorisation to do task 2 while at it.
+        .state_on_truths([ground_atom!((bob step1) executed), ground_atom!((bob step4) executed)], Recipient::All, slick::parse::program(include_str!("./slick/st-antonius_4.slick")).unwrap().1)
+        // Note that not just Bob needs to enact this action; St. Antonius needs to as well
+        // to justify their own read! (It's not a valid effect, otherwise.)
+        .enact_on_truths([
+            // `bob 1`
+            ground_atom!((bob step1) executed), ground_atom!((bob step4) executed),
+            // `st-antonius 1`
+            ground_atom!(("st-antonius" "patients-2024") executed),
+            // `st-antonius 4`
+            ground_atom!((bob step3) executed),
+            // `surf 1`
+            ground_atom!((surf utils) has output "entry-count"),
+            // `surf 2`
+            ground_atom!((bob step2) executed),
+        ])
+        .wait_for_data([(("surf", "utils"), "entry-count"), (("bob", "step2"), "consented")])
+        .read((("surf", "utils"), "entry-count"), "st-antonius 4")
+        .read((("bob", "step2"), "consented"), "st-antonius 4")
+        .write((("bob", "step3"), "num-consented"), "st-antonius 4", b"2");
+
+    let mut surf = Agent::with_store("surf".into(), dataplane.scope("surf"));
+    surf.program()
+        // SURF publishes the existance of their utils package first.
+        .state(Recipient::All, slick::parse::program(include_str!("./slick/surf_1.slick")).unwrap().1)
+        // Then, once it's published, it enacts it and writes the data.
+        .enact_on_truth(ground_atom!((surf utils) has output "entry-count"))
+        .write((("surf", "utils"), "entry-count"), "surf 2", b"super_clever_code();")
+
+        // In the second example, SURF will suggest to do the second step once Bob
+        // publishes his workflow.
+        .state_on_truths([ground_atom!((bob step1) executed), ground_atom!((bob step4) executed)], Recipient::All, slick::parse::program(include_str!("./slick/surf_2.slick")).unwrap().1)
+        // Note that not just Bob needs to enact this action; SURF needs to as well to
+        // justify their own read! (It's not a valid effect, otherwise.)
+        .enact_on_truths([
+            // `bob 1`
+            ground_atom!((bob step1) executed), ground_atom!((bob step4) executed),
+            // `st-antonius 1`
+            ground_atom!(("st-antonius" "patients-2024") executed),
+            // `st-antonius 4`
+            ground_atom!((bob step3) executed),
+            // `surf 1`
+            ground_atom!((surf utils) has output "entry-count"),
+            // `surf 2`
+            ground_atom!((bob step2) executed),
+        ])
+        .wait_for_data([(("bob", "step1"), "filter-consented"), (("st-antonius", "patients-2024"), "patients")])
+        .read((("bob", "step1"), "filter-consented"), "surf 5")
+        .read((("st-antonius", "patients-2024"), "patients"), "surf 5")
+        .write((("bob", "step2"), "consented"), "surf 5", b"billy bob jones\nanakin skywalker");
+
+    let mut sync = Agent::new("consortium".into());
+    sync.program().agree(slick::parse::program(include_str!("./slick/consortium_1.slick")).unwrap().1);
 
     // Run the runtime!
     let mut runtime = System::new();
-    if let Err(err) = runtime.run::<Agent>(agents, sync) {
+    if let Err(err) = runtime.run::<Agent>([bob, st_antonius, surf], sync) {
         error!("{}", toplevel!(("Failed to run runtime"), err));
         std::process::exit(1);
     }

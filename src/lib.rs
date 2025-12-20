@@ -17,7 +17,8 @@ pub mod auditing;
 mod codegen;
 #[cfg(feature = "dataplane")]
 pub mod dataplane;
-pub mod events;
+// pub mod events;
+pub mod agent;
 pub mod io;
 pub mod policy;
 pub mod runtime;

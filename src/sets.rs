@@ -170,7 +170,7 @@ impl<'s, 'i, E: 'static + Debug + Eq + Hash + Send> justact::Set<E> for SetAsync
 }
 impl<'s, 'i, E: 'static + Agented<AgentId = str> + Clone + Debug + Eq + Hash + Send> justact::SetAsync<str, E> for SetAsyncView<'s, 'i, E> {
     #[inline]
-    fn add(&mut self, selector: justact::Recipient<&str>, elem: E) -> Result<(), Self::Error> {
+    fn add(&mut self, selector: justact::Recipient<String>, elem: E) -> Result<(), Self::Error> {
         // Check if this agent may publish an element with associated author/actor
         // This is OK if:
         //  - They are the author/actor; or
@@ -199,7 +199,7 @@ impl<'s, 'i, E: 'static + Agented<AgentId = str> + Clone + Debug + Eq + Hash + S
                 Ok(())
             },
             justact::Recipient::One(id) => {
-                self.parent.views.get_mut(id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {id:?}")).insert(elem);
+                self.parent.views.get_mut(&id).unwrap_or_else(|| panic!("Cannot operate view for unregistered agent {id:?}")).insert(elem);
                 Ok(())
             },
         }

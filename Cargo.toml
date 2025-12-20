@@ -23,10 +23,10 @@ required-features = ["dataplane", "log", "serde", "slick"]
 name = "section6-3-3-ok"
 path = "examples/section6/section6.3.3_ok.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
-[[example]]
-name = "section6-3-3-crash"
-path = "examples/section6/section6.3.3_crash.rs"
-required-features = ["dataplane", "log", "serde", "slick"]
+# [[example]]
+# name = "section6-3-3-crash"
+# path = "examples/section6/section6.3.3_crash.rs"
+# required-features = ["dataplane", "log", "serde", "slick"]
 
 [[example]]
 name = "section6-3-4"
@@ -38,15 +38,15 @@ name = "section6-3-5"
 path = "examples/section6/section6.3.5.rs"
 required-features = ["dataplane", "log", "serde", "slick"]
 
-[[example]]
-name = "invalid-action"
-path = "examples/invalid/invalid_action.rs"
-required-features = ["log", "serde", "slick"]
+# [[example]]
+# name = "invalid-action"
+# path = "examples/invalid/invalid_action.rs"
+# required-features = ["log", "serde", "slick"]
 
-[[example]]
-name = "invalid-gossip"
-path = "examples/invalid/invalid_gossip.rs"
-required-features = ["log", "serde", "slick"]
+# [[example]]
+# name = "invalid-gossip"
+# path = "examples/invalid/invalid_gossip.rs"
+# required-features = ["log", "serde", "slick"]
 
 # [[example]]
 # name = "dex-read-data"

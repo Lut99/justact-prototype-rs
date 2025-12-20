@@ -12,14 +12,12 @@
 //!   Implements the third example from the paper.
 //
 
-mod agents;
 mod trace;
 
-use agents::{Agent, Amy, Bob, Consortium, Dan, Script, StAntonius, Surf};
 use clap::Parser;
 use error_trace::toplevel;
 use humanlog::{DebugMode, HumanLogger};
-use justact::runtime::Runtime as _;
+use justact::runtime::System as _;
 use justact_prototype::dataplane::StoreHandle;
 use justact_prototype::runtime::System;
 use log::{debug, error, info};
@@ -79,23 +77,23 @@ fn main() {
         }
     }
 
-    // Create the agents
-    let dataplane = StoreHandle::new();
-    let agents: [Agent; 5] = [
-        Amy::new(Script::Section6_3_3_crash, &dataplane).into(),
-        Bob::new(Script::Section6_3_3_crash, &dataplane).into(),
-        Dan::new(Script::Section6_3_3_crash).into(),
-        StAntonius::new(Script::Section6_3_3_crash, &dataplane).into(),
-        Surf::new(Script::Section6_3_3_crash, &dataplane).into(),
-    ];
-    let sync = Consortium::new(Script::Section6_3_3_crash);
+    // // Create the agents
+    // let dataplane = StoreHandle::new();
+    // let agents: [Agent; 5] = [
+    //     Amy::new(Script::Section6_3_3_crash, &dataplane).into(),
+    //     Bob::new(Script::Section6_3_3_crash, &dataplane).into(),
+    //     Dan::new(Script::Section6_3_3_crash).into(),
+    //     StAntonius::new(Script::Section6_3_3_crash, &dataplane).into(),
+    //     Surf::new(Script::Section6_3_3_crash, &dataplane).into(),
+    // ];
+    // let sync = Consortium::new(Script::Section6_3_3_crash);
 
-    // Run the runtime!
-    let mut runtime = System::new();
-    if let Err(err) = runtime.run::<Agent>(agents, sync) {
-        error!("{}", toplevel!(("Failed to run runtime"), err));
-        std::process::exit(1);
-    }
+    // // Run the runtime!
+    // let mut runtime = System::new();
+    // if let Err(err) = runtime.run::<Agent>(agents, sync) {
+    //     error!("{}", toplevel!(("Failed to run runtime"), err));
+    //     std::process::exit(1);
+    // }
 
     // Done!
 }
